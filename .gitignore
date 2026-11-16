@@ -1,0 +1,30 @@
+﻿# Secrets and environment files
+.env
+.env.*
+!.env.example
+**/application-local.properties
+**/*-local.properties
+**/*.local.properties
+
+# Java / Maven
+**/target/
+**/build/
+**/.mvn/wrapper/maven-wrapper.jar
+
+# Node / React / Vite
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# Local databases and generated data
+/data/
+**/data/
+*.mv.db
+*.trace.db
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

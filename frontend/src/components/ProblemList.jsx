@@ -1,0 +1,308 @@
+import React, { useState, useEffect } from 'react';
+import { fetchProblems } from '../services/api';
+import {
+  Search, CheckCircle2, Circle, Clock, ChevronRight,
+  Sparkles, BookOpen, Code2, Layers, Filter
+} from 'lucide-react';
+
+const DIFF_ORDER = { EASY: 0, MEDIUM: 1, HARD: 2 };
+
+function DifficultyDot({ level }) {
+  const colors = { EASY: '#34d399', MEDIUM: '#fbbf24', HARD: '#f87171' };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%',
+        background: colors[level] || '#64748b',
+        display: 'inline-block',
+        boxShadow: `0 0 6px ${colors[level] || '#64748b'}60`,
+      }} />
+      <span className={`badge badge-${level.toLowerCase()}`} style={{ fontSize: '0.68rem' }}>{level}</span>
+    </span>
+  );
+}
+
+function StatPill({ icon: Icon, value, label, color }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '0.7rem 1.1rem',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 10,
+      flex: '1 1 120px',
+      minWidth: 110,
+      transition: 'border-color 0.2s, transform 0.2s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-active)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.transform = ''; }}
+    >
+      <div style={{
+        width: 34, height: 34, borderRadius: 9,
+        background: `${color}14`,
+        border: `1px solid ${color}30`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <Icon size={15} color={color} />
+      </div>
+      <div>
+        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'white', lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2, fontWeight: 600 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+export default function ProblemList({ onSelectProblem }) {
+  const [problems, setProblems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [diffFilter, setDiffFilter] = useState('ALL');
+  const [catFilter, setCatFilter] = useState('ALL');
+
+  useEffect(() => {
+    fetchProblems()
+      .then(data => { setProblems(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const categories = ['ALL', ...new Set(problems.map(p => p.category))];
+
+  const filtered = problems.filter(p => {
+    const q = search.toLowerCase();
+    const matchSearch = !search || p.title.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
+    const matchDiff = diffFilter === 'ALL' || p.difficulty === diffFilter;
+    const matchCat = catFilter === 'ALL' || p.category === catFilter;
+    return matchSearch && matchDiff && matchCat;
+  });
+
+  const stats = {
+    total:  problems.length,
+    easy:   problems.filter(p => p.difficulty === 'EASY').length,
+    medium: problems.filter(p => p.difficulty === 'MEDIUM').length,
+    hard:   problems.filter(p => p.difficulty === 'HARD').length,
+  };
+
+  const diffBtns = [
+    { id: 'ALL',    label: 'All' },
+    { id: 'EASY',   label: 'Easy' },
+    { id: 'MEDIUM', label: 'Medium' },
+    { id: 'HARD',   label: 'Hard' },
+  ];
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 1.5rem' }}>
+
+      {/* ── Hero Header ─────────────────────────────── */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '0.28rem 0.75rem',
+          borderRadius: 20,
+          background: 'rgba(139,92,246,0.1)',
+          border: '1px solid rgba(139,92,246,0.25)',
+          color: '#c084fc',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          marginBottom: '0.75rem',
+        }}>
+          <Sparkles size={12} /> Intelligent DSA Practice · Deep Code Analysis
+        </div>
+
+        <h1 style={{
+          fontSize: '2rem',
+          fontWeight: 900,
+          color: 'white',
+          letterSpacing: '-0.02em',
+          lineHeight: 1.2,
+          marginBottom: '0.5rem',
+        }}>
+          Coding Challenges
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: 600 }}>
+          Write Java solutions, get instant AST structural analysis, complexity estimation,
+          security scans, and progressive hint guidance.
+        </p>
+      </div>
+
+      {/* ── Stats Row ───────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.75rem', flexWrap: 'wrap' }}>
+        <StatPill icon={Layers}   value={stats.total}  label="Total Problems" color="var(--primary-bright)" />
+        <StatPill icon={BookOpen} value={stats.easy}   label="Easy"           color="#34d399" />
+        <StatPill icon={BookOpen} value={stats.medium} label="Medium"         color="#fbbf24" />
+        <StatPill icon={BookOpen} value={stats.hard}   label="Hard"           color="#f87171" />
+      </div>
+
+      {/* ── Filters ─────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Search */}
+        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 340 }}>
+          <Search size={15} style={{
+            position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-dim)', pointerEvents: 'none',
+          }} />
+          <input
+            id="problem-search"
+            type="text"
+            placeholder="Search by title or topic..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="code-input"
+          />
+        </div>
+
+        {/* Difficulty filter */}
+        <div style={{ display: 'flex', gap: 3, background: 'var(--bg-card)', borderRadius: 9, padding: 3, border: '1px solid var(--border-subtle)' }}>
+          {diffBtns.map(d => (
+            <button
+              key={d.id}
+              onClick={() => setDiffFilter(d.id)}
+              style={{
+                padding: '0.3rem 0.7rem',
+                borderRadius: 6,
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                border: 'none',
+                background: diffFilter === d.id ? 'var(--bg-card-hover)' : 'transparent',
+                color: diffFilter === d.id ? 'var(--text-main)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                boxShadow: diffFilter === d.id ? '0 1px 4px rgba(0,0,0,0.35)' : 'none',
+              }}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Category filter */}
+        {categories.length > 1 && (
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Filter size={13} style={{ position: 'absolute', left: 9, color: 'var(--text-dim)', pointerEvents: 'none' }} />
+            <select
+              id="category-filter-select"
+              value={catFilter}
+              onChange={e => setCatFilter(e.target.value)}
+              style={{
+                paddingLeft: '1.75rem',
+                paddingRight: '0.75rem',
+                paddingTop: '0.4rem',
+                paddingBottom: '0.4rem',
+                borderRadius: 7,
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-main)',
+                cursor: 'pointer',
+                outline: 'none',
+                appearance: 'none',
+              }}
+            >
+              <option value="ALL">All Topics ({problems.length})</option>
+              {categories.filter(c => c !== 'ALL').map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* ── Problem Table ───────────────────────────── */}
+      {loading ? (
+        <div style={{ padding: '2rem 0' }}>
+          {[1,2,3,4,5].map(i => (
+            <div key={i} style={{
+              height: 56, background: 'var(--bg-card)', borderRadius: 8,
+              marginBottom: 6,
+              backgroundImage: 'linear-gradient(90deg, var(--border-subtle) 25%, var(--border-color) 50%, var(--border-subtle) 75%)',
+              backgroundSize: '200% auto',
+              animation: 'shimmer 1.5s linear infinite',
+              animationDelay: `${i * 0.07}s`,
+            }} />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="container-glass">
+          <div className="empty-state">
+            <Code2 size={32} className="empty-state-icon" />
+            <div className="empty-state-title">No challenges found</div>
+            <div className="empty-state-sub">
+              {search ? `No challenges match "${search}"` : 'Try adjusting your filters.'}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="container-glass" style={{ overflow: 'hidden' }}>
+          <table className="problem-table">
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>#</th>
+                <th>Problem</th>
+                <th style={{ width: 110 }}>Difficulty</th>
+                <th style={{ width: 130 }}>Category</th>
+                <th style={{ width: 110 }}>Status</th>
+                <th style={{ width: 40 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((problem, idx) => (
+                <tr
+                  key={problem.id}
+                  className="problem-row"
+                  onClick={() => onSelectProblem(problem)}
+                  id={`problem-row-${problem.id}`}
+                >
+                  <td style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {String(problem.id || idx + 1).padStart(2, '0')}
+                  </td>
+
+                  <td>
+                    <div className="problem-title">{problem.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                      {problem.hints ? `${problem.hints.length} hints available` : 'Practice problem'}
+                    </div>
+                  </td>
+
+                  <td><DifficultyDot level={problem.difficulty} /></td>
+
+                  <td>
+                    <span className="category-chip">{problem.category}</span>
+                  </td>
+
+                  <td>
+                    {problem.userStatus === 'SOLVED' ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#34d399', fontSize: '0.78rem', fontWeight: 700 }} title="Solved / Accepted">
+                        <CheckCircle2 size={14} color="#34d399" /> Solved
+                      </span>
+                    ) : problem.userStatus === 'ATTEMPTED' ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#fbbf24', fontSize: '0.78rem', fontWeight: 700 }} title="Attempted">
+                        <Clock size={14} color="#fbbf24" /> Attempted
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--text-dim)', fontSize: '0.78rem' }} title="Not Attempted">
+                        <Circle size={14} color="var(--text-dim)" /> Unattempted
+                      </span>
+                    )}
+                  </td>
+
+                  <td>
+                    <ChevronRight size={15} className="problem-row-arrow" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Footer note */}
+      <div style={{ marginTop: '0.85rem', fontSize: '0.75rem', color: 'var(--text-dim)', textAlign: 'right' }}>
+        {filtered.length} of {problems.length} challenges shown
+      </div>
+    </div>
+  );
+}
