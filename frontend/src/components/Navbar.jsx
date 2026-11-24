@@ -56,14 +56,14 @@ export default function Navbar({ activeTab, setActiveTab }) {
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '0.3rem 0.7rem',
-          borderRadius: 20,
+          borderRadius: 'var(--radius-full)',
           background: 'rgba(16,185,129,0.08)',
           border: '1px solid rgba(16,185,129,0.2)',
-          fontSize: '0.72rem',
+          fontSize: '0.75rem',
           fontWeight: 600,
           color: 'var(--accent-green-bright)',
         }}>
-          <Zap size={11} />
+          <Zap size={12} aria-hidden="true" />
           <span>AST Engine · Java 21</span>
         </div>
       </div>

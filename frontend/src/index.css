@@ -50,9 +50,11 @@
   --topbar-h: 48px;
 
   /* Radii */
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  --radius-full: 9999px;
 }
 
 /* ============================
@@ -93,7 +95,7 @@ button {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
 
@@ -164,7 +166,7 @@ button {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   transition: border-color 0.2s ease;
 }
 .container-glass:hover {
@@ -183,7 +185,7 @@ button {
   align-items: center;
   gap: 6px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0.5rem 1rem;
@@ -250,7 +252,7 @@ button {
   align-items: center;
   gap: 6px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0.5rem 1rem;
@@ -267,11 +269,12 @@ button {
   align-items: center;
   gap: 4px;
   padding: 0.2rem 0.55rem;
-  border-radius: 6px;
-  font-size: 0.72rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
   font-weight: 700;
+  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   white-space: nowrap;
 }
 .badge-easy   { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.28); }
@@ -318,7 +321,7 @@ button {
 .score-circle {
   width: 88px;
   height: 88px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -353,12 +356,12 @@ button {
 .progress-bar-track {
   height: 7px;
   background: var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
 }
 .progress-bar-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   animation: width-grow 0.6s cubic-bezier(0.4,0,0.2,1) forwards;
   background: linear-gradient(90deg, var(--primary) 0%, var(--accent-purple) 100%);
 }
@@ -371,7 +374,7 @@ button {
 .metric-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem 0.9rem;
   display: flex;
   flex-direction: column;
@@ -403,7 +406,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 0.65rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 0.85rem;
   font-weight: 600;
   animation: slide-up 0.2s ease forwards;
@@ -428,7 +431,7 @@ button {
    FINDING CARD
    ============================ */
 .finding-card {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -447,7 +450,7 @@ button {
   padding: 0.6rem 0.9rem 0.6rem 2.5rem;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-main);
   font-size: 0.875rem;
   font-family: var(--font-sans);
@@ -485,7 +488,7 @@ button {
 .navbar-logo {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, var(--primary) 0%, var(--accent-purple) 100%);
   display: flex;
   align-items: center;
@@ -503,7 +506,7 @@ button {
   align-items: center;
   gap: 6px;
   padding: 0.4rem 0.9rem;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: 0.82rem;
   font-weight: 600;
   border: 1px solid transparent;
@@ -532,7 +535,7 @@ button {
   border-collapse: collapse;
 }
 .problem-table th {
-  padding: 0.6rem 1rem;
+  padding: 0.6rem 0.75rem;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -542,7 +545,7 @@ button {
   border-bottom: 1px solid var(--border-subtle);
 }
 .problem-table td {
-  padding: 0.8rem 1rem;
+  padding: 0.65rem 0.75rem;
   border-bottom: 1px solid var(--border-subtle);
   font-size: 0.875rem;
   vertical-align: middle;
@@ -565,13 +568,65 @@ button {
 }
 .category-chip {
   display: inline-flex;
-  padding: 0.18rem 0.6rem;
-  border-radius: 20px;
-  font-size: 0.7rem;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
   background: rgba(139,92,246,0.1);
   color: #d8b4fe;
   border: 1px solid rgba(139,92,246,0.25);
+}
+
+/* Problem List Footer & Pagination */
+.problem-list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(9, 13, 20, 0.45);
+}
+.pagination-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pagination-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--border-active);
+  color: var(--text-main);
+}
+.pagination-btn.active {
+  background: rgba(59,130,246,0.16);
+  border-color: rgba(59,130,246,0.45);
+  color: var(--primary-bright);
+  font-weight: 700;
+}
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ============================
@@ -667,7 +722,7 @@ button {
   width: 2px;
   height: 20px;
   background: rgba(255, 255, 255, 0.25);
-  border-radius: 1px;
+  border-radius: var(--radius-xs);
 }
 .resize-handle-col:hover::after,
 .resize-handle-col.dragging::after {
@@ -695,7 +750,7 @@ button {
   width: 20px;
   height: 2px;
   background: rgba(255, 255, 255, 0.25);
-  border-radius: 1px;
+  border-radius: var(--radius-xs);
 }
 .resize-handle-row:hover::after,
 .resize-handle-row.dragging::after {
@@ -708,7 +763,7 @@ button {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
@@ -733,7 +788,7 @@ button {
   background: linear-gradient(90deg, var(--border-subtle) 25%, var(--border-color) 50%, var(--border-subtle) 75%);
   background-size: 200% auto;
   animation: shimmer 1.5s linear infinite;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 /* ============================
@@ -742,7 +797,7 @@ button {
 .stat-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 1.25rem 1.5rem;
   display: flex;
   align-items: center;
@@ -757,7 +812,7 @@ button {
 .stat-icon {
   width: 44px;
   height: 44px;
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -824,7 +879,7 @@ pre {
   align-items: center;
   gap: 5px;
   padding: 0.25rem 0.65rem;
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid;
@@ -971,6 +1026,16 @@ select:focus-visible,
 
   .freeform-editor-card {
     min-height: 360px;
+  }
+
+  .problem-list-container {
+    padding: 1rem 0.75rem !important;
+  }
+
+  .problem-list-footer {
+    padding: 0.75rem;
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
