@@ -4,7 +4,10 @@ import com.codereview.backend.analysis.core.AnalysisRequest;
 import com.codereview.backend.analysis.core.AnalysisResult;
 import com.codereview.backend.analysis.java.JavaLanguageAnalyzer;
 import com.codereview.backend.entity.TestCaseEntity;
+import com.codereview.backend.execution.cpp.CppExecutionEngine;
+import com.codereview.backend.util.LanguageValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.tools.*;
@@ -24,13 +27,44 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
-@RequiredArgsConstructor
 public class ValidationExecutionEngine implements ExecutionEngine {
 
     private final JavaLanguageAnalyzer javaLanguageAnalyzer;
+    private final CppExecutionEngine cppExecutionEngine;
+
+    @Autowired
+    public ValidationExecutionEngine(JavaLanguageAnalyzer javaLanguageAnalyzer, CppExecutionEngine cppExecutionEngine) {
+        this.javaLanguageAnalyzer = javaLanguageAnalyzer;
+        this.cppExecutionEngine = cppExecutionEngine;
+    }
+
+    public ValidationExecutionEngine(JavaLanguageAnalyzer javaLanguageAnalyzer) {
+        this(javaLanguageAnalyzer, null);
+    }
 
     @Override
     public ExecutionResult execute(ExecutionRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Execution request cannot be null");
+        }
+        String lang = LanguageValidator.validateAndNormalize(request.getLanguage());
+        if (LanguageValidator.isCpp(lang)) {
+            if (cppExecutionEngine != null) {
+                return cppExecutionEngine.execute(request);
+            }
+            int totalCases = request.getTestCases() != null ? request.getTestCases().size() : 0;
+            return ExecutionResult.builder()
+                    .status("NOT_APPLICABLE")
+                    .applicable(false)
+                    .passedTestCases(0)
+                    .totalTestCases(totalCases)
+                    .applicabilityReason("C++ execution engine is unavailable in the current runtime environment.")
+                    .compilationOutput("Execution unavailable: C++ execution engine is not configured.")
+                    .userFacingSummary("Execution unavailable: C++ execution engine is not configured.")
+                    .testCaseDetails(List.of())
+                    .build();
+        }
+
         String code = request.getCode();
         List<TestCaseEntity> testCases = request.getTestCases();
         if (testCases == null) {
@@ -83,6 +117,24 @@ public class ValidationExecutionEngine implements ExecutionEngine {
     }
 
     public ExecutionResult executeFreeform(String code, long timeLimitMs) {
+        return executeFreeform(code, timeLimitMs, "JAVA");
+    }
+
+    public ExecutionResult executeFreeform(String code, long timeLimitMs, String language) {
+        String lang = LanguageValidator.validateAndNormalize(language);
+        if (LanguageValidator.isCpp(lang)) {
+            if (cppExecutionEngine != null) {
+                return cppExecutionEngine.executeFreeform(code, timeLimitMs);
+            }
+            return ExecutionResult.builder()
+                    .status("NOT_APPLICABLE")
+                    .applicable(false)
+                    .applicabilityReason("C++ execution engine is unavailable in the current runtime environment.")
+                    .compilationOutput("Execution unavailable: C++ execution engine is not configured.")
+                    .userFacingSummary("Execution unavailable: C++ execution engine is not configured.")
+                    .build();
+        }
+
         if (code == null || code.trim().isEmpty()) {
             return ExecutionResult.builder()
                     .status("COMPILATION_ERROR")

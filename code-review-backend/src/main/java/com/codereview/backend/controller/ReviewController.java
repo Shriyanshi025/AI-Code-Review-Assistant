@@ -4,6 +4,7 @@ import com.codereview.backend.dto.FreeformReviewRequestDto;
 import com.codereview.backend.dto.ProblemReviewRequestDto;
 import com.codereview.backend.entity.ReviewSessionEntity;
 import com.codereview.backend.service.ReviewService;
+import com.codereview.backend.util.LanguageValidator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,13 +21,17 @@ public class ReviewController {
 
     @PostMapping("/freeform")
     public ResponseEntity<ReviewSessionEntity> analyzeFreeformCode(@Valid @RequestBody FreeformReviewRequestDto request) {
-        ReviewSessionEntity session = reviewService.analyzeFreeformCode(request.getCode(), request.getUserId());
+        String normalizedLanguage = LanguageValidator.validateAndNormalize(request.getLanguage());
+        ReviewSessionEntity session = reviewService.analyzeFreeformCode(
+                request.getCode(), request.getUserId(), normalizedLanguage);
         return ResponseEntity.ok(session);
     }
 
     @PostMapping("/analyze")
     public ResponseEntity<ReviewSessionEntity> analyzeProblemCode(@Valid @RequestBody ProblemReviewRequestDto request) {
-        ReviewSessionEntity session = reviewService.analyzeProblemCode(request.getProblemId(), request.getCode(), request.getUserId());
+        String normalizedLanguage = LanguageValidator.validateAndNormalize(request.getLanguage());
+        ReviewSessionEntity session = reviewService.analyzeProblemCode(
+                request.getProblemId(), request.getCode(), request.getUserId(), normalizedLanguage);
         return ResponseEntity.ok(session);
     }
 

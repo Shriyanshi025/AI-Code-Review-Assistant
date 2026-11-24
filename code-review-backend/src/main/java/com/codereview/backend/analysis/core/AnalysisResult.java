@@ -17,7 +17,9 @@ import java.util.Map;
 public class AnalysisResult {
 
     private String language;
-    private boolean syntaxValid;
+    private Boolean syntaxValid;
+    @Builder.Default
+    private SyntaxStatus syntaxStatus = SyntaxStatus.VALID;
     private String parsingErrorMessage;
 
     @Builder.Default
@@ -57,4 +59,16 @@ public class AnalysisResult {
     private boolean testingApplicable = true;
 
     private String testingCategory;
+
+    public boolean isSyntaxValid() {
+        return syntaxStatus == SyntaxStatus.VALID || Boolean.TRUE.equals(syntaxValid);
+    }
+
+    public boolean isSyntaxInvalid() {
+        return syntaxStatus == SyntaxStatus.INVALID || Boolean.FALSE.equals(syntaxValid);
+    }
+
+    public boolean isSyntaxUnavailable() {
+        return syntaxStatus == SyntaxStatus.UNAVAILABLE;
+    }
 }

@@ -40,6 +40,9 @@ public class SubmissionPersistenceAndProgressTest {
     private SubmissionRepository submissionRepository;
 
     @Autowired
+    private ReviewSessionRepository reviewSessionRepository;
+
+    @Autowired
     private UserProgressRepository userProgressRepository;
 
     private UserEntity userA;
@@ -84,6 +87,14 @@ public class SubmissionPersistenceAndProgressTest {
         assertEquals(userA.getId(), persisted.getUser().getId(), "2. Submission belongs to correct user");
         assertEquals(reverseArrayProblem.getId(), persisted.getProblem().getId(), "3. Submission belongs to correct problem");
         assertNotNull(persisted.getSubmittedAt(), "Submission timestamp must exist");
+
+        // Verify aiProvider, aiModel, and aiKeySource are persisted and returned correctly
+        assertNotNull(response.reviewSession(), "ReviewSession must exist in response");
+        assertNotNull(response.reviewSession().getAiProvider(), "aiProvider must be set in response");
+        ReviewSessionEntity persistedReview = reviewSessionRepository.findById(response.reviewSession().getId()).orElseThrow();
+        assertEquals(response.reviewSession().getAiProvider(), persistedReview.getAiProvider(), "aiProvider must be persisted in database");
+        assertEquals(response.reviewSession().getAiModel(), persistedReview.getAiModel(), "aiModel must be persisted in database");
+        assertEquals(response.reviewSession().getAiKeySource(), persistedReview.getAiKeySource(), "aiKeySource must be persisted in database");
     }
 
     @Test
@@ -180,5 +191,87 @@ public class SubmissionPersistenceAndProgressTest {
         assertEquals(0, progress.getAttemptedCount(), "Freeform review should not increment attempted count");
         assertEquals(0, progress.getTotalSubmissions(), "Freeform review should not increment total submissions");
         assertNull(progress.getAverageScore(), "Average review score should be null when no challenge submissions exist");
+    }
+
+    @Test
+    @DisplayName("13. Legacy review session with null syntaxStatus persists and loads without breaking")
+    void testLegacyReviewSessionWithNullSyntaxStatusCompatibility() {
+        // Create submission
+        SubmissionEntity sub = submissionRepository.save(SubmissionEntity.builder()
+                .user(userA)
+                .problem(reverseArrayProblem)
+                .code("public class Legacy { }")
+                .language("JAVA")
+                .status("PASSED")
+                .passedTestCases(3)
+                .totalTestCases(3)
+                .build());
+
+        // Save legacy review session with null syntaxStatus
+        ReviewSessionEntity legacySession = reviewSessionRepository.save(ReviewSessionEntity.builder()
+                .user(userA)
+                .problem(reverseArrayProblem)
+                .submission(sub)
+                .code(sub.getCode())
+                .sessionType("PROBLEM_SUBMISSION")
+                .language("JAVA")
+                .overallScore(85)
+                .syntaxStatus(null) // Legacy row simulation
+                .build());
+
+        assertNotNull(legacySession.getId(), "Legacy review session ID must be generated");
+
+        // Reload directly from repository
+        ReviewSessionEntity reloaded = reviewSessionRepository.findById(legacySession.getId()).orElseThrow();
+        assertNull(reloaded.getSyntaxStatus(), "Legacy record must cleanly retain null syntaxStatus");
+        assertEquals(85, reloaded.getOverallScore());
+
+        // Verify mapping into SubmissionHistoryDto does not fail
+        List<SubmissionHistoryDto> history = submissionService.getSubmissionHistoryByProblem(reverseArrayProblem.getId(), userA.getId());
+        assertFalse(history.isEmpty());
+        SubmissionHistoryDto historyItem = history.stream()
+                .filter(h -> h.getId().equals(sub.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertNull(historyItem.getSyntaxStatus(), "Submission history must safely expose null syntaxStatus for legacy rows");
+    }
+
+    @Test
+    @DisplayName("14. Review session persists VALID, INVALID, and UNAVAILABLE syntax statuses correctly")
+    void testReviewSessionSyntaxStatusAllStatesPersistence() {
+        // VALID state
+        ReviewSessionEntity validSession = reviewSessionRepository.save(ReviewSessionEntity.builder()
+                .user(userA)
+                .code("public class Valid { }")
+                .sessionType("FREEFORM_REVIEW")
+                .language("JAVA")
+                .syntaxStatus("VALID")
+                .build());
+
+        // INVALID state
+        ReviewSessionEntity invalidSession = reviewSessionRepository.save(ReviewSessionEntity.builder()
+                .user(userA)
+                .code("public class Invalid {")
+                .sessionType("FREEFORM_REVIEW")
+                .language("JAVA")
+                .syntaxStatus("INVALID")
+                .build());
+
+        // UNAVAILABLE state
+        ReviewSessionEntity unavailableSession = reviewSessionRepository.save(ReviewSessionEntity.builder()
+                .user(userA)
+                .code("int main() { return 0; }")
+                .sessionType("FREEFORM_REVIEW")
+                .language("CPP")
+                .syntaxStatus("UNAVAILABLE")
+                .build());
+
+        ReviewSessionEntity reloadedValid = reviewSessionRepository.findById(validSession.getId()).orElseThrow();
+        ReviewSessionEntity reloadedInvalid = reviewSessionRepository.findById(invalidSession.getId()).orElseThrow();
+        ReviewSessionEntity reloadedUnavailable = reviewSessionRepository.findById(unavailableSession.getId()).orElseThrow();
+
+        assertEquals("VALID", reloadedValid.getSyntaxStatus());
+        assertEquals("INVALID", reloadedInvalid.getSyntaxStatus());
+        assertEquals("UNAVAILABLE", reloadedUnavailable.getSyntaxStatus());
     }
 }

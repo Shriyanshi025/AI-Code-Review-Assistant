@@ -37,6 +37,10 @@ public class ReviewSessionEntity {
     @Column(name = "session_type", nullable = false)
     private String sessionType; // PROBLEM_SUBMISSION, FREEFORM_REVIEW
 
+    @Column(name = "language")
+    @Builder.Default
+    private String language = "JAVA";
+
     @Column(name = "overall_score")
     private Integer overallScore;
 
@@ -67,6 +71,9 @@ public class ReviewSessionEntity {
     @Column(name = "space_complexity")
     private String spaceComplexity;
 
+    @Column(name = "syntax_status")
+    private String syntaxStatus; // VALID, INVALID, UNAVAILABLE
+
     @Column(name = "execution_status")
     private String executionStatus;
 
@@ -87,6 +94,15 @@ public class ReviewSessionEntity {
 
     @Column(columnDefinition = "TEXT")
     private String summary;
+
+    @Column(name = "ai_provider")
+    private String aiProvider; // GEMINI, DETERMINISTIC
+
+    @Column(name = "ai_model")
+    private String aiModel; // gemini-3.8-flash, RULE_BASED_AST
+
+    @Column(name = "ai_key_source")
+    private String aiKeySource; // PRIMARY, BACKUP, NONE
 
 
     @Builder.Default

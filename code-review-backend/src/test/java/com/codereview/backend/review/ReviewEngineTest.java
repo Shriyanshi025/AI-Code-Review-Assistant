@@ -253,7 +253,7 @@ class ReviewEngineTest {
                 .findFirst().orElseThrow();
 
         assertTrue(testingFinding.getMessage().contains("Testing confidence is limited"), "Finding message must explain why testing score is lower");
-        assertTrue(testingFinding.getRecommendation().contains("empty array"), "Finding recommendation must contain code-aware array suggestions");
+        assertTrue(testingFinding.getRecommendation().toLowerCase().contains("empty array"), "Finding recommendation must contain code-aware array suggestions");
     }
 
     @Test
@@ -279,7 +279,7 @@ class ReviewEngineTest {
                 .filter(f -> "JAVA_FREEFORM_TESTING_LIMITED".equals(f.getRuleId()))
                 .findFirst().orElseThrow();
 
-        String rec = testingFinding.getRecommendation();
+        String rec = testingFinding.getRecommendation().toLowerCase();
         assertTrue(rec.contains("empty string"), "String code suggestions must mention empty string");
         assertTrue(rec.contains("single-character string"), "String code suggestions must mention single character string");
         assertFalse(rec.contains("empty array"), "String code suggestions must NOT contain array suggestions");

@@ -3,6 +3,7 @@ package com.codereview.backend.review;
 import com.codereview.backend.ai.AIReviewAdapter;
 import com.codereview.backend.ai.AIReviewRequest;
 import com.codereview.backend.ai.StructuredAIResponse;
+import com.codereview.backend.analysis.cpp.CppLanguageAnalyzer;
 import com.codereview.backend.analysis.core.*;
 import com.codereview.backend.analysis.java.JavaLanguageAnalyzer;
 import com.codereview.backend.analysis.performance.PerformanceAnalysisResult;
@@ -13,6 +14,7 @@ import com.codereview.backend.execution.ExecutionRequest;
 import com.codereview.backend.execution.ExecutionResult;
 import com.codereview.backend.execution.ValidationExecutionEngine;
 import com.codereview.backend.service.StuckUserTracker;
+import com.codereview.backend.util.LanguageValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -23,8 +25,8 @@ import java.util.Optional;
 @Service
 public class ReviewEngine {
 
-
     private final JavaLanguageAnalyzer javaLanguageAnalyzer;
+    private final CppLanguageAnalyzer cppLanguageAnalyzer;
     private final ExecutionEngine executionEngine;
     private final AIReviewAdapter aiReviewAdapter;
     private final StuckUserTracker stuckUserTracker;
@@ -32,38 +34,91 @@ public class ReviewEngine {
 
     @Autowired
     public ReviewEngine(JavaLanguageAnalyzer javaLanguageAnalyzer,
+                        CppLanguageAnalyzer cppLanguageAnalyzer,
                         ExecutionEngine executionEngine,
                         AIReviewAdapter aiReviewAdapter,
                         StuckUserTracker stuckUserTracker,
                         PerformanceAnalyzer performanceAnalyzer) {
         this.javaLanguageAnalyzer = javaLanguageAnalyzer;
+        this.cppLanguageAnalyzer = cppLanguageAnalyzer;
         this.executionEngine = executionEngine;
         this.aiReviewAdapter = aiReviewAdapter;
         this.stuckUserTracker = stuckUserTracker;
         this.performanceAnalyzer = performanceAnalyzer != null ? performanceAnalyzer : new PerformanceAnalyzer();
     }
 
+    public ReviewEngine(JavaLanguageAnalyzer javaLanguageAnalyzer,
+                        ExecutionEngine executionEngine,
+                        AIReviewAdapter aiReviewAdapter,
+                        StuckUserTracker stuckUserTracker,
+                        PerformanceAnalyzer performanceAnalyzer) {
+        this(javaLanguageAnalyzer, null, executionEngine, aiReviewAdapter, stuckUserTracker, performanceAnalyzer);
+    }
 
     public ReviewEngine(JavaLanguageAnalyzer javaLanguageAnalyzer,
                         ExecutionEngine executionEngine,
                         AIReviewAdapter aiReviewAdapter,
                         StuckUserTracker stuckUserTracker) {
-        this(javaLanguageAnalyzer, executionEngine, aiReviewAdapter, stuckUserTracker, new PerformanceAnalyzer());
+        this(javaLanguageAnalyzer, null, executionEngine, aiReviewAdapter, stuckUserTracker, new PerformanceAnalyzer());
     }
-
 
     /**
      * Conducts a unified review session for problem submission or freeform code.
      */
     public ReviewSessionEntity createReviewSession(UserEntity user, ProblemEntity problem, SubmissionEntity submission, String code, String sessionType) {
+        return createReviewSession(user, problem, submission, code, sessionType, "JAVA");
+    }
 
-        // 1. Run AST Static Code Analysis
-        AnalysisResult astResult = javaLanguageAnalyzer.analyze(AnalysisRequest.builder()
-                .code(code)
-                .language("JAVA")
-                .problemId(problem != null ? problem.getId() : null)
-                .problemDescription(problem != null ? problem.getDescription() : null)
-                .build());
+    public ReviewSessionEntity createReviewSession(UserEntity user, ProblemEntity problem, SubmissionEntity submission, String code, String sessionType, String language) {
+        String lang = LanguageValidator.validateAndNormalize(language);
+        boolean isCpp = LanguageValidator.isCpp(lang);
+
+        // 1. Run Static Code Analysis
+        AnalysisResult astResult;
+        if (isCpp) {
+            if (cppLanguageAnalyzer != null) {
+                astResult = cppLanguageAnalyzer.analyze(AnalysisRequest.builder()
+                        .code(code)
+                        .language("CPP")
+                        .problemId(problem != null ? problem.getId() : null)
+                        .problemDescription(problem != null ? problem.getDescription() : null)
+                        .build());
+            } else {
+                astResult = AnalysisResult.builder()
+                        .language("CPP")
+                        .syntaxStatus(SyntaxStatus.UNAVAILABLE)
+                        .syntaxValid(null)
+                        .parsingErrorMessage(null)
+                        .estimatedTimeComplexity("Unknown")
+                        .estimatedSpaceComplexity("Unknown")
+                        .qualityScore(0)
+                        .complexityScore(0)
+                        .maintainabilityScore(0)
+                        .securityScore(0)
+                        .performanceScore(0)
+                        .findings(List.of(FindingDto.builder()
+                                .ruleId("CPP_ANALYZER_UNAVAILABLE")
+                                .severity(FindingSeverity.HIGH)
+                                .category(FindingCategory.MAINTAINABILITY)
+                                .title("C++ Analyzer Unavailable")
+                                .message("C++ code analysis engine is not configured.")
+                                .explanation("Static analysis for C++ is unavailable in this runtime configuration.")
+                                .recommendation("Ensure C++ language analysis components are configured and enabled.")
+                                .lineStart(1)
+                                .lineEnd(1)
+                                .confidence(1.0)
+                                .source(FindingSource.DETERMINISTIC)
+                                .build()))
+                        .build();
+            }
+        } else {
+            astResult = javaLanguageAnalyzer.analyze(AnalysisRequest.builder()
+                    .code(code)
+                    .language("JAVA")
+                    .problemId(problem != null ? problem.getId() : null)
+                    .problemDescription(problem != null ? problem.getDescription() : null)
+                    .build());
+        }
 
         List<FindingDto> findings = new ArrayList<>(astResult.getFindings());
 
@@ -77,7 +132,7 @@ public class ReviewEngine {
         if (problem != null && problem.getTestCases() != null && !problem.getTestCases().isEmpty()) {
             execResult = executionEngine.execute(ExecutionRequest.builder()
                     .code(code)
-                    .language("JAVA")
+                    .language(isCpp ? "CPP" : "JAVA")
                     .testCases(problem.getTestCases())
                     .build());
 
@@ -94,7 +149,7 @@ public class ReviewEngine {
                 executionSummaryStr = passed + " of " + total + " test cases passed during evaluation.";
 
                 findings.add(FindingDto.builder()
-                        .ruleId("JAVA_CHALLENGE_TEST_SUITE_PARTIAL_FAILURE")
+                        .ruleId((isCpp ? "CPP" : "JAVA") + "_CHALLENGE_TEST_SUITE_PARTIAL_FAILURE")
                         .severity(FindingSeverity.HIGH)
                         .category(FindingCategory.TESTING)
                         .title("Challenge Test Suite Partial Failure (" + passed + "/" + total + " Passed)")
@@ -111,13 +166,13 @@ public class ReviewEngine {
                 executionSummaryStr = "Test execution blocked due to status: " + execResult.getStatus();
 
                 findings.add(FindingDto.builder()
-                        .ruleId("JAVA_TEST_EXECUTION_BLOCKED")
+                        .ruleId((isCpp ? "CPP" : "JAVA") + "_TEST_EXECUTION_BLOCKED")
                         .severity(FindingSeverity.HIGH)
                         .category(FindingCategory.TESTING)
                         .title("Test Execution Blocked (" + execResult.getStatus() + ")")
                         .message("Automated test execution could not complete due to compilation or execution failure.")
                         .explanation("The submitted code encountered errors during build/execution, preventing automated test cases from running to completion.")
-                        .recommendation("Fix compilation syntax errors or runtime exceptions (e.g. NullPointerException, ArrayIndexOutOfBoundsException) to enable test evaluation.")
+                        .recommendation("Fix compilation syntax errors or runtime exceptions to enable test evaluation.")
                         .hint("Why it matters: Code must compile and execute cleanly before test cases can be evaluated.")
                         .confidence(1.0)
                         .source(FindingSource.DETERMINISTIC)
@@ -126,13 +181,13 @@ public class ReviewEngine {
         } else {
             // FREE-FORM REVIEW context (no platform test suite)
             if (executionEngine instanceof ValidationExecutionEngine vee) {
-                execResult = vee.executeFreeform(code, 2000L);
+                execResult = vee.executeFreeform(code, 2000L, isCpp ? "CPP" : "JAVA");
                 if (execResult != null && execResult.getUserFacingSummary() != null) {
                     executionSummaryStr = execResult.getUserFacingSummary();
                 }
             }
 
-            if (!astResult.isSyntaxValid()) {
+            if (astResult.getSyntaxStatus() == SyntaxStatus.INVALID) {
                 correctnessScore = 0;
                 testingScore = 20;
             } else {
@@ -150,7 +205,8 @@ public class ReviewEngine {
                     if (testingScore >= 90 && astResult.isHasAssertions()) {
                         stuckUserTracker.reset(contextKey);
                     } else {
-                        int stuckCount = stuckUserTracker.getAndUpdateStuckCount(contextKey, code, "JAVA_FREEFORM_TESTING_LIMITED");
+                        String limitedRuleId = (isCpp ? "CPP" : "JAVA") + "_FREEFORM_TESTING_LIMITED";
+                        int stuckCount = stuckUserTracker.getAndUpdateStuckCount(contextKey, code, limitedRuleId);
                         
                         List<String> suggestions = astResult.getCodeAwareSuggestions();
                         String suggestionsText = (suggestions != null && !suggestions.isEmpty())
@@ -168,7 +224,7 @@ public class ReviewEngine {
                         }
 
                         findings.add(FindingDto.builder()
-                                .ruleId("JAVA_FREEFORM_TESTING_LIMITED")
+                                .ruleId(limitedRuleId)
                                 .severity(FindingSeverity.MEDIUM)
                                 .category(FindingCategory.TESTING)
                                 .title("Testing Coverage Could Be Improved")
@@ -185,18 +241,21 @@ public class ReviewEngine {
         }
 
         // Sub-scores directly from AST analysis
-        int qualityScore = astResult.getQualityScore();
-        int complexityScore = astResult.getComplexityScore();
-        int maintainabilityScore = astResult.getMaintainabilityScore();
-        int securityScore = astResult.getSecurityScore();
-        int performanceScore = astResult.getPerformanceScore();
+        int qualityScore = astResult.getQualityScore() != null ? astResult.getQualityScore() : 0;
+        int complexityScore = astResult.getComplexityScore() != null ? astResult.getComplexityScore() : 0;
+        int maintainabilityScore = astResult.getMaintainabilityScore() != null ? astResult.getMaintainabilityScore() : 0;
+        int securityScore = astResult.getSecurityScore() != null ? astResult.getSecurityScore() : 0;
+        int performanceScore = astResult.getPerformanceScore() != null ? astResult.getPerformanceScore() : 0;
 
-        // 2b. Run Deterministic Performance & Optimization Analyzer
-        PerformanceAnalysisResult perfAnalysis = performanceAnalyzer.analyze(astResult, code, problem);
-        if (perfAnalysis != null && perfAnalysis.getFindings() != null) {
-            findings.addAll(perfAnalysis.getFindings());
-            if (perfAnalysis.isHasOptimizationOpportunity()) {
-                performanceScore = Math.max(30, performanceScore - 15);
+        // 2b. Run Deterministic Performance & Optimization Analyzer (Java specific AST)
+        PerformanceAnalysisResult perfAnalysis = null;
+        if (!isCpp) {
+            perfAnalysis = performanceAnalyzer.analyze(astResult, code, problem);
+            if (perfAnalysis != null && perfAnalysis.getFindings() != null) {
+                findings.addAll(perfAnalysis.getFindings());
+                if (perfAnalysis.isHasOptimizationOpportunity()) {
+                    performanceScore = Math.max(30, performanceScore - 15);
+                }
             }
         }
 
@@ -210,7 +269,7 @@ public class ReviewEngine {
                 qualityScore = Math.max(0, qualityScore - 20);
 
                 findings.add(FindingDto.builder()
-                        .ruleId("JAVA_INPLACE_REQUIRED_VIOLATION")
+                        .ruleId((isCpp ? "CPP" : "JAVA") + "_INPLACE_REQUIRED_VIOLATION")
                         .severity(FindingSeverity.MEDIUM)
                         .category(FindingCategory.COMPLEXITY)
                         .title("In-place Requirement Not Satisfied")
@@ -226,7 +285,7 @@ public class ReviewEngine {
                 performanceScore = Math.max(0, performanceScore - 30);
 
                 findings.add(FindingDto.builder()
-                        .ruleId("JAVA_SPACE_COMPLEXITY_EXCEEDED")
+                        .ruleId((isCpp ? "CPP" : "JAVA") + "_SPACE_COMPLEXITY_EXCEEDED")
                         .severity(FindingSeverity.MEDIUM)
                         .category(FindingCategory.COMPLEXITY)
                         .title("Auxiliary Space Exceeds Expected Complexity")
@@ -247,7 +306,7 @@ public class ReviewEngine {
                     performanceScore = Math.max(0, performanceScore - 45);
 
                     findings.add(FindingDto.builder()
-                            .ruleId("JAVA_TIME_COMPLEXITY_EXCEEDED")
+                            .ruleId((isCpp ? "CPP" : "JAVA") + "_TIME_COMPLEXITY_EXCEEDED")
                             .severity(FindingSeverity.HIGH)
                             .category(FindingCategory.PERFORMANCE)
                             .title("Time Complexity Exceeds Expected Target")
@@ -264,12 +323,12 @@ public class ReviewEngine {
         // 3. AI Semantic Review Adapter Call
         StructuredAIResponse aiResponse = aiReviewAdapter.generateReview(AIReviewRequest.builder()
                 .code(code)
-                .language("JAVA")
+                .language(isCpp ? "CPP" : "JAVA")
                 .deterministicFindings(findings)
                 .metrics(astResult.getMetrics())
                 .estimatedTimeComplexity(perfAnalysis != null && perfAnalysis.getTimeComplexity() != null ? perfAnalysis.getTimeComplexity() : astResult.getEstimatedTimeComplexity())
                 .estimatedSpaceComplexity(perfAnalysis != null && perfAnalysis.getSpaceComplexity() != null ? perfAnalysis.getSpaceComplexity() : astResult.getEstimatedSpaceComplexity())
-                .problemTitle(problem != null ? problem.getTitle() : "Free-form Review")
+                .problemTitle(problem != null ? problem.getTitle() : (isCpp ? "C++ Code Analysis" : "Free-form Review"))
                 .problemDescription(problem != null ? problem.getDescription() : "")
                 .problemConstraints(problem != null ? problem.getConstraints() : "")
                 .codeAwareSuggestions(astResult.getCodeAwareSuggestions())
@@ -372,6 +431,7 @@ public class ReviewEngine {
                 .submission(submission)
                 .code(code)
                 .sessionType(sessionType)
+                .language(isCpp ? "CPP" : "JAVA")
                 .overallScore(overallScore)
                 .correctnessScore(correctnessScore)
                 .qualityScore(qualityScore)
@@ -382,6 +442,7 @@ public class ReviewEngine {
                 .testingScore(testingScore)
                 .timeComplexity(perfAnalysis != null && perfAnalysis.getTimeComplexity() != null ? perfAnalysis.getTimeComplexity() : astResult.getEstimatedTimeComplexity())
                 .spaceComplexity(perfAnalysis != null && perfAnalysis.getSpaceComplexity() != null ? perfAnalysis.getSpaceComplexity() : astResult.getEstimatedSpaceComplexity())
+                .syntaxStatus(astResult.getSyntaxStatus() != null ? astResult.getSyntaxStatus().name() : "VALID")
                 .executionStatus(execResult != null ? execResult.getStatus() : "NOT_APPLICABLE")
                 .executionStdout(execResult != null ? execResult.getStdout() : null)
                 .executionStderr(execResult != null ? execResult.getStderr() : null)
@@ -389,6 +450,9 @@ public class ReviewEngine {
                 .executionApplicable(execResult != null ? execResult.isApplicable() : false)
                 .executionSummary(execResult != null ? execResult.getUserFacingSummary() : "Execution not applicable.")
                 .summary(finalSummary)
+                .aiProvider(aiResponse.getAiProvider())
+                .aiModel(aiResponse.getAiModel())
+                .aiKeySource(aiResponse.getAiKeySource())
                 .findings(new ArrayList<>())
                 .metrics(new ArrayList<>())
                 .testSuggestions(new ArrayList<>())

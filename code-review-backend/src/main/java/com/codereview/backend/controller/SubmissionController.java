@@ -3,6 +3,7 @@ package com.codereview.backend.controller;
 import com.codereview.backend.dto.SubmissionHistoryDto;
 import com.codereview.backend.dto.SubmissionRequestDto;
 import com.codereview.backend.service.SubmissionService;
+import com.codereview.backend.util.LanguageValidator;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,8 +21,9 @@ public class SubmissionController {
 
     @PostMapping
     public ResponseEntity<SubmissionService.SubmissionResponse> submitSolution(@Valid @RequestBody SubmissionRequestDto request) {
+        String normalizedLanguage = LanguageValidator.validateAndNormalize(request.getLanguage());
         SubmissionService.SubmissionResponse response = submissionService.submitSolution(
-                request.getProblemId(), request.getCode(), request.getUserId());
+                request.getProblemId(), request.getCode(), request.getUserId(), normalizedLanguage);
         return ResponseEntity.ok(response);
     }
 

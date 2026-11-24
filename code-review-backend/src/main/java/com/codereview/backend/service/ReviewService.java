@@ -7,6 +7,7 @@ import com.codereview.backend.repository.ProblemRepository;
 import com.codereview.backend.repository.ReviewSessionRepository;
 import com.codereview.backend.repository.UserRepository;
 import com.codereview.backend.review.ReviewEngine;
+import com.codereview.backend.util.LanguageValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,22 +26,34 @@ public class ReviewService {
 
     @Transactional
     public ReviewSessionEntity analyzeFreeformCode(String code, Long userId) {
+        return analyzeFreeformCode(code, userId, "JAVA");
+    }
+
+    @Transactional
+    public ReviewSessionEntity analyzeFreeformCode(String code, Long userId, String language) {
         UserEntity user = resolveUser(userId);
+        String lang = LanguageValidator.validateAndNormalize(language);
 
         ReviewSessionEntity session = reviewEngine.createReviewSession(
-                user, null, null, code, "FREEFORM_REVIEW");
+                user, null, null, code, "FREEFORM_REVIEW", lang);
 
         return reviewSessionRepository.save(session);
     }
 
     @Transactional
     public ReviewSessionEntity analyzeProblemCode(Long problemId, String code, Long userId) {
+        return analyzeProblemCode(problemId, code, userId, "JAVA");
+    }
+
+    @Transactional
+    public ReviewSessionEntity analyzeProblemCode(Long problemId, String code, Long userId, String language) {
         UserEntity user = resolveUser(userId);
         ProblemEntity problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("Problem not found with ID: " + problemId));
+        String lang = LanguageValidator.validateAndNormalize(language);
 
         ReviewSessionEntity session = reviewEngine.createReviewSession(
-                user, problem, null, code, "PROBLEM_SUBMISSION");
+                user, problem, null, code, "PROBLEM_SUBMISSION", lang);
 
         return reviewSessionRepository.save(session);
     }

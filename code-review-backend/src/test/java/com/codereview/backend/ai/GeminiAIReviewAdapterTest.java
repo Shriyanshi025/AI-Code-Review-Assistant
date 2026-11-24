@@ -1,7 +1,6 @@
 package com.codereview.backend.ai;
 
 import com.codereview.backend.analysis.java.JavaLanguageAnalyzer;
-
 import com.codereview.backend.entity.ProblemEntity;
 import com.codereview.backend.entity.ReviewSessionEntity;
 import com.codereview.backend.entity.TestCaseEntity;
@@ -12,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -25,6 +25,9 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class GeminiAIReviewAdapterTest {
 
+    private static final String INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+    private static final String TARGET_MODEL = "gemini-3.8-flash";
+
     private DeterministicAIReviewAdapter fallbackAdapter;
     private RestClient.Builder restClientBuilder;
     private MockRestServiceServer mockServer;
@@ -37,37 +40,45 @@ class GeminiAIReviewAdapterTest {
     }
 
     private GeminiAIReviewAdapter createAdapter(String apiKey, String model, boolean enabled, int timeout) {
-        return new GeminiAIReviewAdapter(fallbackAdapter, apiKey, model, enabled, timeout, restClientBuilder.build());
+        return new GeminiAIReviewAdapter(fallbackAdapter, apiKey, model, INTERACTIONS_URL, enabled, timeout, restClientBuilder.build());
+    }
+
+    private GeminiAIReviewAdapter createAdapter(String apiKey, String backupApiKey, String model, boolean enabled, int timeout) {
+        return new GeminiAIReviewAdapter(fallbackAdapter, apiKey, backupApiKey, model, INTERACTIONS_URL, enabled, timeout, restClientBuilder.build());
     }
 
     @Test
-    @DisplayName("Test 1 & 2: Successful Gemini response with valid structured JSON")
-    void testSuccessfulGeminiResponse() {
-        String validGeminiResponse = """
+    @DisplayName("Test 1 & 2: Successful Gemini Interactions API response with steps schema")
+    void testSuccessfulGeminiInteractionsStepsResponse() {
+        String validInteractionsResponse = """
             {
-              "candidates": [
+              "id": "int_101",
+              "model": "gemini-3.8-flash",
+              "steps": [
                 {
-                  "content": {
-                    "parts": [
-                      {
-                        "text": "{\\"summary\\": \\"Solid Java code review with strong overall design.\\", \\"strengths\\": [\\"Clean method structure\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": [\\"Memory vs speed\\"]}"
-                      }
-                    ]
-                  }
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Solid Java code review with strong overall design.\\", \\"strengths\\": [\\"Clean method structure\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": [\\"Memory vs speed\\"]}"
+                    }
+                  ]
                 }
               ]
             }
             """;
 
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
+                .andExpect(header("Api-Revision", "2026-05-20"))
                 .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess(validGeminiResponse, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(validInteractionsResponse, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code("public class Solution {}")
+                .language("JAVA")
                 .problemTitle("Test Problem")
                 .build();
 
@@ -77,6 +88,45 @@ class GeminiAIReviewAdapterTest {
         assertEquals("Solid Java code review with strong overall design.", response.getSummary());
         assertEquals(1, response.getStrengths().size());
         assertEquals("Clean method structure", response.getStrengths().get(0));
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("gemini-3.8-flash", response.getAiModel());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 2b: Successful Gemini response with unary outputs schema")
+    void testSuccessfulGeminiInteractionsOutputsResponse() {
+        String validOutputsResponse = """
+            {
+              "id": "int_102",
+              "outputs": [
+                {
+                  "type": "text",
+                  "text": "{\\"summary\\": \\"Excellent C++ algorithm implementation.\\", \\"strengths\\": [\\"Zero allocations\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                }
+              ]
+            }
+            """;
+
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "test-key"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(validOutputsResponse, MediaType.APPLICATION_JSON));
+
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("int main() { return 0; }")
+                .language("CPP")
+                .problemTitle("Find Max")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertEquals("Excellent C++ algorithm implementation.", response.getSummary());
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("gemini-3.8-flash", response.getAiModel());
         mockServer.verify();
     }
 
@@ -85,50 +135,53 @@ class GeminiAIReviewAdapterTest {
     void testMalformedGeminiResponseFallback() {
         String malformedResponse = """
             {
-              "candidates": [
+              "id": "int_103",
+              "steps": [
                 {
-                  "content": {
-                    "parts": [
-                      {
-                        "text": "THIS IS NOT VALID JSON AT ALL { summary: broken "
-                      }
-                    ]
-                  }
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "THIS IS NOT VALID JSON AT ALL { summary: broken "
+                    }
+                  ]
                 }
               ]
             }
             """;
 
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withSuccess(malformedResponse, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code("public class Solution {}")
+                .language("JAVA")
                 .problemTitle("Test Problem")
                 .build();
 
         StructuredAIResponse response = adapter.generateReview(request);
 
         assertNotNull(response);
-        // Falls back to deterministic summary format
         assertTrue(response.getSummary().contains("Review for 'Test Problem'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
         mockServer.verify();
     }
 
     @Test
-    @DisplayName("Test 4 & 5: Gemini API HTTP error falls back safely without throwing exception")
+    @DisplayName("Test 4 & 5: Gemini API HTTP 503 Service Unavailable falls back safely without throwing exception")
     void testGeminiApiErrorFallback() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
-                .andRespond(withServerError());
+                .andRespond(withServiceUnavailable());
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code("public class Solution {}")
+                .language("JAVA")
                 .problemTitle("Test Problem")
                 .build();
 
@@ -136,16 +189,18 @@ class GeminiAIReviewAdapterTest {
 
         assertNotNull(response);
         assertTrue(response.getSummary().contains("Review for 'Test Problem'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
         mockServer.verify();
     }
 
     @Test
     @DisplayName("Test 6: Missing API key falls back to deterministic review without making network call")
     void testMissingApiKeyFallback() {
-        GeminiAIReviewAdapter adapter = createAdapter("", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("", TARGET_MODEL, true, 30);
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code("public class Solution {}")
+                .language("JAVA")
                 .problemTitle("Test Problem")
                 .build();
 
@@ -153,15 +208,17 @@ class GeminiAIReviewAdapterTest {
 
         assertNotNull(response);
         assertTrue(response.getSummary().contains("Review for 'Test Problem'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
     }
 
     @Test
     @DisplayName("Test 7: Disabled Gemini mode (gemini.enabled=false) falls back to deterministic review")
     void testDisabledGeminiModeFallback() {
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", false, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, false, 30);
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code("public class Solution {}")
+                .language("JAVA")
                 .problemTitle("Test Problem")
                 .build();
 
@@ -169,16 +226,17 @@ class GeminiAIReviewAdapterTest {
 
         assertNotNull(response);
         assertTrue(response.getSummary().contains("Review for 'Test Problem'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
     }
 
     @Test
     @DisplayName("Test 8: ReviewEngine still completes full review session when Gemini fails")
     void testReviewEngineWorksWhenGeminiFails() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withServerError());
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -198,30 +256,31 @@ class GeminiAIReviewAdapterTest {
         assertNotNull(session.getOverallScore());
         assertNotNull(session.getSummary());
         assertFalse(session.getSummary().isEmpty());
+        assertEquals("DETERMINISTIC", session.getAiProvider());
     }
 
     @Test
     @DisplayName("Test 9: Deterministic security finding cannot be removed or overridden by Gemini")
     void testDeterministicSecurityFindingProtected() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"No security concerns found in code.\\", \\"contextualFindings\\": []}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"No security concerns found in code.\\", \\"contextualFindings\\": []}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -242,6 +301,8 @@ class GeminiAIReviewAdapterTest {
         boolean hasSecretFinding = session.getFindings().stream()
                 .anyMatch(f -> "JAVA_HARDCODED_SECRET_DETECTED".equals(f.getRuleId()));
         assertTrue(hasSecretFinding, "Deterministic hardcoded secret finding MUST remain in final findings!");
+        assertEquals("GEMINI", session.getAiProvider());
+        assertEquals("gemini-3.8-flash", session.getAiModel());
     }
 
     @Test
@@ -249,26 +310,26 @@ class GeminiAIReviewAdapterTest {
     void testHiddenTestCasesNotSentToGemini() {
         AtomicReference<String> capturedRequestBody = new AtomicReference<>("");
 
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andExpect(request -> capturedRequestBody.set(request.getBody().toString()))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Review completed.\\"}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Review completed.\\"}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -303,26 +364,26 @@ class GeminiAIReviewAdapterTest {
     void testSensitiveUserInfoNotSentToGemini() {
         AtomicReference<String> capturedRequestBody = new AtomicReference<>("");
 
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andExpect(request -> capturedRequestBody.set(request.getBody().toString()))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Review completed.\\"}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Review completed.\\"}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -347,26 +408,26 @@ class GeminiAIReviewAdapterTest {
     void testPromptInjectionSafety() {
         AtomicReference<String> capturedRequestBody = new AtomicReference<>("");
 
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andExpect(request -> capturedRequestBody.set(request.getBody().toString()))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Analysis complete. Prompt injection ignored.\\"}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Analysis complete. Prompt injection ignored.\\"}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
 
         String maliciousCode = """
                 public class Solution {
@@ -377,6 +438,7 @@ class GeminiAIReviewAdapterTest {
 
         AIReviewRequest request = AIReviewRequest.builder()
                 .code(maliciousCode)
+                .language("JAVA")
                 .problemTitle("Sample")
                 .build();
 
@@ -391,25 +453,25 @@ class GeminiAIReviewAdapterTest {
     @Test
     @DisplayName("Test 13: Duplicate deterministic and AI findings are merged or deduplicated")
     void testDuplicateFindingsDeduplicated() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Review done.\\", \\"contextualFindings\\": [{\\"title\\": \\"Hardcoded Secret Detected\\", \\"severity\\": \\"HIGH\\", \\"explanation\\": \\"Secret found in code.\\", \\"whyItMatters\\": \\"Credentials can be exposed.\\", \\"guidance\\": \\"Use environment variables.\\"}]}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Review done.\\", \\"contextualFindings\\": [{\\"title\\": \\"Hardcoded Secret Detected\\", \\"severity\\": \\"HIGH\\", \\"explanation\\": \\"Secret found in code.\\", \\"whyItMatters\\": \\"Credentials can be exposed.\\", \\"guidance\\": \\"Use environment variables.\\"}]}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -432,27 +494,27 @@ class GeminiAIReviewAdapterTest {
     }
 
     @Test
-    @DisplayName("Test 14: Free Review works with Gemini")
-    void testFreeReviewWithGemini() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+    @DisplayName("Test 14: Free Review works with Gemini Interactions API for Java")
+    void testFreeReviewWithGeminiJava() {
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Freeform review summary from Gemini.\\", \\"strengths\\": [\\"Clean method structure\\"]}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Freeform review summary from Gemini.\\", \\"strengths\\": [\\"Clean method structure\\"]}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -470,30 +532,32 @@ class GeminiAIReviewAdapterTest {
         assertNotNull(session);
         assertTrue(session.getSummary().contains("Freeform review summary from Gemini"));
         assertTrue(session.getSummary().contains("Clean method structure"));
+        assertEquals("GEMINI", session.getAiProvider());
+        assertEquals("gemini-3.8-flash", session.getAiModel());
     }
 
     @Test
-    @DisplayName("Test 15: Challenge Review works with Gemini")
-    void testChallengeReviewWithGemini() {
-        mockServer.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"))
+    @DisplayName("Test 15: Challenge Review works with Gemini Interactions API for C++")
+    void testChallengeReviewWithGeminiCpp() {
+        mockServer.expect(requestTo(INTERACTIONS_URL))
                 .andExpect(header("x-goog-api-key", "test-key"))
                 .andRespond(withSuccess("""
                     {
-                      "candidates": [
+                      "steps": [
                         {
-                          "content": {
-                            "parts": [
-                              {
-                                "text": "{\\"summary\\": \\"Challenge submission review from Gemini.\\", \\"tradeoffs\\": [\\"Iterative vs recursive\\"]}"
-                              }
-                            ]
-                          }
+                          "type": "model_output",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "{\\"summary\\": \\"Challenge submission review from Gemini for C++.\\", \\"tradeoffs\\": [\\"Iterative vs recursive\\"]}"
+                            }
+                          ]
                         }
                       ]
                     }
                     """, MediaType.APPLICATION_JSON));
 
-        GeminiAIReviewAdapter adapter = createAdapter("test-key", "gemini-1.5-flash", true, 30);
+        GeminiAIReviewAdapter adapter = createAdapter("test-key", TARGET_MODEL, true, 30);
         JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
         ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
         StuckUserTracker stuckTracker = new StuckUserTracker();
@@ -502,24 +566,380 @@ class GeminiAIReviewAdapterTest {
 
         ProblemEntity problem = ProblemEntity.builder()
                 .id(1L)
-                .title("Two Sum")
+                .title("Find Max Element")
                 .testCases(List.of(
-                        TestCaseEntity.builder().id(1L).input("nums = [2,7], target = 9").expectedOutput("[0, 1]").isHidden(false).build()
+                        TestCaseEntity.builder().id(1L).input("[3, 7, 2, 9, 5]").expectedOutput("9").isHidden(false).build()
                 ))
                 .build();
 
         String code = """
-                public class Solution {
-                    public int[] twoSum(int[] nums, int target) {
-                        return new int[]{0, 1};
-                    }
-                }
+                #include <iostream>
+                #include <vector>
+                using namespace std;
+                int main() { return 0; }
                 """;
 
         ReviewSessionEntity session = engine.createReviewSession(null, problem, null, code, "CHALLENGE_SUBMISSION");
 
         assertNotNull(session);
-        assertTrue(session.getSummary().contains("Challenge submission review from Gemini"));
+        assertTrue(session.getSummary().contains("Challenge submission review from Gemini for C++"));
         assertTrue(session.getSummary().contains("Iterative vs recursive"));
+        assertEquals("GEMINI", session.getAiProvider());
+        assertEquals("gemini-3.8-flash", session.getAiModel());
+    }
+
+    @Test
+    @DisplayName("Test 16: Primary key success — backup not called")
+    void testPrimarySuccess_BackupNotCalled() {
+        String validResponse = """
+            {
+              "id": "int_primary_success",
+              "model": "gemini-3.8-flash",
+              "steps": [
+                {
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Review using primary key.\\", \\"strengths\\": [\\"Clean\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-1"))
+                .andExpect(header("Api-Revision", "2026-05-20"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(validResponse, MediaType.APPLICATION_JSON));
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-1", "backup-key-2", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Test Primary")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertEquals("Review using primary key.", response.getSummary());
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("PRIMARY", response.getAiKeySource());
+        assertEquals("gemini-3.8-flash", response.getAiModel());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 17: Primary authentication failure (401/403) — backup succeeds")
+    void testPrimaryAuthFailure_BackupSucceeds() {
+        String validBackupResponse = """
+            {
+              "id": "int_backup_success",
+              "model": "gemini-3.8-flash",
+              "steps": [
+                {
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Review using backup key after primary 401.\\", \\"strengths\\": [\\"Fast\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        // Request 1: Primary fails with 401 Unauthorized
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-1"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        // Request 2: Failover to backup key succeeds
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "backup-key-2"))
+                .andRespond(withSuccess(validBackupResponse, MediaType.APPLICATION_JSON));
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-1", "backup-key-2", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Test Auth Failover")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertEquals("Review using backup key after primary 401.", response.getSummary());
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("BACKUP", response.getAiKeySource());
+        assertEquals("gemini-3.8-flash", response.getAiModel());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 18: Primary quota failure (429) — backup succeeds")
+    void testPrimaryQuotaFailure_BackupSucceeds() {
+        String validBackupResponse = """
+            {
+              "id": "int_quota_backup_success",
+              "model": "gemini-3.8-flash",
+              "steps": [
+                {
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Review using backup key after primary 429 quota.\\", \\"strengths\\": [], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        // Request 1: Primary fails with 429 Too Many Requests
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-1"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        // Request 2: Failover to backup key succeeds
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "backup-key-2"))
+                .andRespond(withSuccess(validBackupResponse, MediaType.APPLICATION_JSON));
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-1", "backup-key-2", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Test Quota Failover")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertEquals("Review using backup key after primary 429 quota.", response.getSummary());
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("BACKUP", response.getAiKeySource());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 19: Primary 503 — only one backup attempt, then deterministic fallback")
+    void testPrimary503_BackupAttemptedAtMostOnce() {
+        // Request 1: Primary returns 503
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-1"))
+                .andRespond(withServiceUnavailable());
+
+        // Request 2: Backup returns 503 (at most 1 retry)
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "backup-key-2"))
+                .andRespond(withServiceUnavailable());
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-1", "backup-key-2", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Test 503 Controlled Failover")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertTrue(response.getSummary().contains("Review for 'Test 503 Controlled Failover'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
+        assertEquals("NONE", response.getAiKeySource());
+        assertEquals("NONE", response.getAiModel());
+        mockServer.verify(); // Verifies exactly 2 HTTP requests were executed (1 primary + 1 backup)
+    }
+
+    @Test
+    @DisplayName("Test 20: Both keys fail — deterministic fallback works safely")
+    void testBothKeysFail_DeterministicFallbackWorks() {
+        // Request 1: Primary returns 403 Forbidden
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-1"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        // Request 2: Backup returns 500 Internal Server Error
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "backup-key-2"))
+                .andRespond(withServerError());
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-1", "backup-key-2", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Test Both Fail")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertTrue(response.getSummary().contains("Review for 'Test Both Fail'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
+        assertEquals("NONE", response.getAiKeySource());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 21: Missing backup key — primary still works independently")
+    void testMissingBackupKey_PrimaryStillWorks() {
+        String validResponse = """
+            {
+              "id": "int_primary_only",
+              "model": "gemini-3.8-flash",
+              "steps": [
+                {
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Review with primary only.\\", \\"strengths\\": [], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key-alone"))
+                .andRespond(withSuccess(validResponse, MediaType.APPLICATION_JSON));
+
+        // Backup key is empty string
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key-alone", "", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Primary Only Test")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertEquals("Review with primary only.", response.getSummary());
+        assertEquals("GEMINI", response.getAiProvider());
+        assertEquals("PRIMARY", response.getAiKeySource());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 22: Both keys missing — existing safe fallback works without network call")
+    void testBothKeysMissing_DeterministicFallbackWorks() {
+        // No mockServer expectations configured because no network call must occur
+        GeminiAIReviewAdapter adapter = createAdapter("", "", TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("No Keys Test")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        assertTrue(response.getSummary().contains("Review for 'No Keys Test'"));
+        assertEquals("DETERMINISTIC", response.getAiProvider());
+        assertEquals("NONE", response.getAiKeySource());
+    }
+
+    @Test
+    @DisplayName("Test 23: No API key appears in logs, responses, or error strings")
+    void testNoApiKeyAppearsInLogsOrResponses() {
+        String sensitivePrimary = "super-secret-primary-token-xyz-1234567890";
+        String sensitiveBackup = "super-secret-backup-token-abc-0987654321";
+
+        // Both keys return 503
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", sensitivePrimary))
+                .andRespond(withServiceUnavailable());
+
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", sensitiveBackup))
+                .andRespond(withServiceUnavailable());
+
+        GeminiAIReviewAdapter adapter = createAdapter(sensitivePrimary, sensitiveBackup, TARGET_MODEL, true, 30);
+
+        AIReviewRequest request = AIReviewRequest.builder()
+                .code("public class Solution {}")
+                .language("JAVA")
+                .problemTitle("Security Test")
+                .build();
+
+        StructuredAIResponse response = adapter.generateReview(request);
+
+        assertNotNull(response);
+        // Verify response fields never leak the keys
+        assertFalse(String.valueOf(response.getSummary()).contains(sensitivePrimary));
+        assertFalse(String.valueOf(response.getSummary()).contains(sensitiveBackup));
+        assertFalse(String.valueOf(response.getAiProvider()).contains(sensitivePrimary));
+        assertFalse(String.valueOf(response.getAiKeySource()).contains(sensitivePrimary));
+        assertFalse(String.valueOf(response.getAiKeySource()).contains(sensitiveBackup));
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Test 24: No duplicate review persistence on primary failure and backup success")
+    void testNoDuplicateReviewPersistenceOnFailover() {
+        String validBackupResponse = """
+            {
+              "id": "int_backup_engine",
+              "model": "gemini-3.8-flash",
+              "steps": [
+                {
+                  "type": "model_output",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\\"summary\\": \\"Failover completed cleanly.\\", \\"strengths\\": [\\"Modular\\"], \\"contextualFindings\\": [], \\"tradeoffs\\": []}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        // Primary 503 -> Backup 200
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "primary-key"))
+                .andRespond(withServiceUnavailable());
+
+        mockServer.expect(requestTo(INTERACTIONS_URL))
+                .andExpect(header("x-goog-api-key", "backup-key"))
+                .andRespond(withSuccess(validBackupResponse, MediaType.APPLICATION_JSON));
+
+        GeminiAIReviewAdapter adapter = createAdapter("primary-key", "backup-key", TARGET_MODEL, true, 30);
+        JavaLanguageAnalyzer javaAnalyzer = new JavaLanguageAnalyzer();
+        ValidationExecutionEngine execEngine = new ValidationExecutionEngine(javaAnalyzer);
+        StuckUserTracker stuckTracker = new StuckUserTracker();
+
+        ReviewEngine engine = new ReviewEngine(javaAnalyzer, execEngine, adapter, stuckTracker);
+
+        String code = """
+                public class Solution {
+                    public int square(int x) { return x * x; }
+                }
+                """;
+
+        ReviewSessionEntity session = engine.createReviewSession(null, null, null, code, "FREEFORM_REVIEW");
+
+        assertNotNull(session);
+        assertEquals("GEMINI", session.getAiProvider());
+        assertEquals("BACKUP", session.getAiKeySource());
+        assertEquals("gemini-3.8-flash", session.getAiModel());
+        assertTrue(session.getSummary().contains("Failover completed cleanly."));
+        assertEquals(100, session.getCorrectnessScore());
+        mockServer.verify();
     }
 }

@@ -52,7 +52,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
       </nav>
 
       {/* Status indicator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="navbar-status-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '0.3rem 0.7rem',
@@ -64,7 +64,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
           color: 'var(--accent-green-bright)',
         }}>
           <Zap size={11} />
-          AST Engine · Java 21
+          <span>AST Engine · Java 21</span>
         </div>
       </div>
     </header>

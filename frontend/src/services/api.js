@@ -29,65 +29,70 @@ export async function fetchProblemById(id) {
   }
 }
 
-export async function analyzeFreeformCode(code) {
+export async function analyzeFreeformCode(code, language = 'JAVA') {
   try {
     const res = await fetch(`${BASE_URL}/reviews/freeform`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code, language })
     });
     if (!res.ok) throw new Error('Freeform analysis failed');
     return await res.json();
   } catch (err) {
     console.warn('API analyzeFreeform error, fallback to client parsing simulator', err);
-    return simulateClientReview(code, null);
+    return simulateClientReview(code, null, language);
   }
 }
 
-export async function analyzeProblemCode(problemId, code) {
+export async function analyzeProblemCode(problemId, code, language = 'JAVA') {
   try {
     const res = await fetch(`${BASE_URL}/reviews/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ problemId, code })
+      body: JSON.stringify({ problemId, code, language })
     });
     if (!res.ok) throw new Error('Problem analysis failed');
     return await res.json();
   } catch (err) {
     console.warn('API analyzeProblem error, fallback to client parsing simulator', err);
-    return simulateClientReview(code, problemId);
+    return simulateClientReview(code, problemId, language);
   }
 }
 
-export async function submitSolution(problemId, code) {
+export async function submitSolution(problemId, code, language = 'JAVA') {
+  let res;
   try {
-    const res = await fetch(`${BASE_URL}/submissions`, {
+    res = await fetch(`${BASE_URL}/submissions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ problemId, code })
+      body: JSON.stringify({ problemId, code, language })
     });
-    if (!res.ok) throw new Error('Submission failed');
-    return await res.json();
-  } catch (err) {
-    console.warn('API submitSolution error, fallback to client simulation', err);
-    const review = simulateClientReview(code, problemId);
-    return {
-      submission: { id: 101, status: 'PASSED', passedTestCases: 2, totalTestCases: 2, executionTimeMs: 14 },
-      reviewSession: review,
-      executionResult: {
-        status: 'PASSED',
-        passedTestCases: 2,
-        totalTestCases: 2,
-        userFacingSummary: 'Your solution passed 2/2 test cases.',
-        testCaseDetails: [
-          { testCaseId: 1, passed: true, input: '[-2,1,-3,4,-1,2,1,-5,4]', expectedOutput: '6', actualOutput: '6', isHidden: false },
-          { testCaseId: 2, passed: true, input: '[-5,-2,-8,-1]', expectedOutput: '-1', actualOutput: '-1', isHidden: true }
-        ]
-      }
-    };
+  } catch (networkErr) {
+    console.error('API submitSolution network error:', networkErr);
+    throw new Error('Unable to connect to submission server. Please ensure the backend is running.');
   }
+
+  if (!res.ok) {
+    let errorMessage = `Submission failed (HTTP ${res.status})`;
+    try {
+      const errorData = await res.json();
+      if (errorData?.message) {
+        errorMessage = errorData.message;
+      } else if (errorData?.error) {
+        errorMessage = errorData.error;
+      }
+    } catch {
+      if (res.statusText) {
+        errorMessage = `Submission failed: ${res.statusText} (HTTP ${res.status})`;
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  return await res.json();
 }
 
+// Single-user architecture: defaults to primary seeded developer identity (demo_developer, id: 1)
 export async function fetchUserProgress(userId = 1) {
   try {
     const res = await fetch(`${BASE_URL}/progress/user/${userId}`);
@@ -227,15 +232,38 @@ function getFallbackProblems() {
       hints: [
         { id: 1, hintOrder: 1, title: 'HashMap Optimization', content: 'Can you use a HashMap to store target remainders for O(N) linear time lookups?' }
       ]
+    },
+    {
+      id: 3,
+      title: 'Find Maximum Element',
+      slug: 'find-maximum-element',
+      difficulty: 'EASY',
+      category: 'Arrays',
+      description: 'Given an array of integers `arr`, find and return the maximum element in the array.',
+      constraints: '1 <= arr.length <= 10^5\n-10^9 <= arr[i] <= 10^9',
+      inputFormat: 'Enter the array as a bracketed list of comma-separated integers.',
+      outputFormat: 'Integer representing the maximum value.',
+      examplesJson: JSON.stringify([{ input: 'arr = [3, 7, 2, 9, 5]', output: '9', explanation: '9 is the largest element.' }]),
+      testCases: [
+        { id: 1, input: '[3, 7, 2, 9, 5]', expectedOutput: '9', isHidden: false, explanation: 'Standard array' },
+        { id: 2, input: '[-5, -2, -8, -1]', expectedOutput: '-1', isHidden: true, explanation: 'All negative values' }
+      ],
+      initialCode: `public class Solution {\n    public int findLargest(int[] arr) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      hints: [
+        { id: 1, hintOrder: 1, title: 'Keep track of max', content: 'Keep track of maximum value seen so far.' },
+        { id: 2, hintOrder: 2, title: 'Handle negatives', content: 'Initialize with arr[0] to handle negative numbers.' }
+      ]
     }
   ];
 }
 
-function simulateClientReview(code, problemId) {
+function simulateClientReview(code, problemId, language = 'JAVA') {
   const isZeroInitBug = code.includes('maxSoFar = 0') || code.includes('max = 0');
+  const isCpp = language === 'CPP' || language === 'C++';
   
   return {
     id: Date.now(),
+    language: isCpp ? 'CPP' : 'JAVA',
     overallScore: isZeroInitBug ? 76 : 94,
     correctnessScore: isZeroInitBug ? 70 : 100,
     qualityScore: 88,
@@ -248,17 +276,17 @@ function simulateClientReview(code, problemId) {
     spaceComplexity: 'O(1)',
     summary: isZeroInitBug ? 
       "Found 1 high-severity logical issue regarding zero-initialization for negative input values." :
-      "Clean solution with solid O(N) linear time complexity.",
+      `Clean ${isCpp ? 'C++' : 'Java'} solution with solid O(N) linear time complexity.`,
     findings: isZeroInitBug ? [
       {
         id: 1,
-        ruleId: 'JAVA_ZERO_INIT_MAX_PITFALL',
+        ruleId: isCpp ? 'CPP_ZERO_INIT_MAX_PITFALL' : 'JAVA_ZERO_INIT_MAX_PITFALL',
         severity: 'HIGH',
         category: 'CORRECTNESS',
         title: 'Potential Initialization Issue for Maximum Value',
         message: 'Your current initialization assumes that the input contains non-negative values.',
         explanation: 'For an input containing only negative values (e.g. [-5, -2, -8]), returning 0 produces an incorrect result.',
-        recommendation: 'Initialize the tracked maximum using the first valid element (nums[0]) or Integer.MIN_VALUE.',
+        recommendation: isCpp ? 'Initialize the tracked maximum using nums[0] or INT_MIN.' : 'Initialize the tracked maximum using the first valid element (nums[0]) or Integer.MIN_VALUE.',
         hint: 'Ask yourself what happens when every element is smaller than zero.',
         lineStart: 4,
         lineEnd: 4,

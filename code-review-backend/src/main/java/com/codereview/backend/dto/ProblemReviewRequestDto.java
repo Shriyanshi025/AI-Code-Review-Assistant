@@ -9,8 +9,10 @@ public class ProblemReviewRequestDto {
     @NotNull(message = "Problem ID is required")
     private Long problemId;
 
-    @NotBlank(message = "Java source code cannot be empty")
+    @NotBlank(message = "Source code cannot be empty")
     private String code;
 
     private Long userId;
+
+    private String language;
 }

@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { analyzeProblemCode, submitSolution, fetchProblemSubmissions } from '../services/api';
+import SyntaxStatusBadge from './SyntaxStatusBadge';
+import InputFormatGuide from './InputFormatGuide';
 import {
   Play, Send, Lightbulb, CheckCircle2, XCircle, AlertTriangle,
   Shield, Cpu, RefreshCw, ChevronLeft, FileCode2, Clock, MemoryStick,
@@ -136,6 +138,7 @@ function FindingCard({ finding }) {
         </div>
         <button
           onClick={() => setOpen(o => !o)}
+          aria-label={open ? "Collapse finding details" : "Expand finding details"}
           style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }}
         >
           {open ? <EyeOff size={13} /> : <Eye size={13} />}
@@ -267,7 +270,7 @@ function SubmissionHistoryList({ history, loading, onSelectSubmission }) {
       {history.map((sub, idx) => (
         <div
           key={sub.id || idx}
-          onClick={() => onSelectSubmission(sub)}
+          onClick={(e) => onSelectSubmission(sub, e.currentTarget.querySelector('button') || e.currentTarget)}
           style={{
             background: 'var(--bg-dark)',
             border: '1px solid var(--border-subtle)',
@@ -304,8 +307,13 @@ function SubmissionHistoryList({ history, loading, onSelectSubmission }) {
             </div>
           </div>
           <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectSubmission(sub, e.currentTarget);
+            }}
             className="btn btn-ghost"
             style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', flexShrink: 0 }}
+            aria-label={`Inspect submission #${sub.id}`}
           >
             <Eye size={12} /> Inspect
           </button>
@@ -316,30 +324,106 @@ function SubmissionHistoryList({ history, loading, onSelectSubmission }) {
 }
 
 /* ── SubmissionDetailModal Component ────────────────────────────────────────── */
-function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
+function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor, triggerRef }) {
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (!submission) return;
+
+    const triggerEl = triggerRef?.current;
+
+    // 1. Move focus inside when modal opens
+    const timer = setTimeout(() => {
+      if (closeButtonRef.current) {
+        closeButtonRef.current.focus();
+      } else if (modalRef.current) {
+        modalRef.current.focus();
+      }
+    }, 50);
+
+    // 2. Keyboard trap & Escape handler
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        if (!modalRef.current) return;
+        const focusableElements = modalRef.current.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusableElements || focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement || document.activeElement === modalRef.current) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+      // 3. Restore focus to exact trigger on close
+      if (triggerEl) {
+        try {
+          triggerEl.focus();
+        } catch {
+          // ignore if unmounted
+        }
+      }
+    };
+  }, [submission, onClose, triggerRef]);
+
   if (!submission) return null;
 
   const isPassed = submission.status === 'PASSED' || submission.status === 'SOLVED' || submission.status === 'ACCEPTED';
   const isRuntimeErr = submission.status === 'RUNTIME_ERROR';
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000, padding: '1rem',
-    }}>
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-active)',
-        borderRadius: 12,
-        width: '100%', maxWidth: 750,
-        maxHeight: '90vh',
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
-        overflow: 'hidden',
-        animation: 'slide-up 0.2s ease',
-      }}>
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000, padding: '1rem',
+      }}
+    >
+      <div
+        ref={modalRef}
+        tabIndex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="submission-modal-title"
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-active)',
+          borderRadius: 12,
+          width: '100%', maxWidth: 750,
+          maxHeight: '90vh',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          overflow: 'hidden',
+          animation: 'slide-up 0.2s ease',
+          outline: 'none',
+        }}
+      >
         {/* Modal Header */}
         <div style={{
           padding: '1rem 1.25rem',
@@ -348,9 +432,9 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
           background: 'var(--bg-surface)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontWeight: 800, color: 'white', fontSize: '0.95rem' }}>
+            <h2 id="submission-modal-title" style={{ fontWeight: 800, color: 'white', fontSize: '0.95rem', margin: 0 }}>
               Submission #{submission.id}
-            </span>
+            </h2>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               padding: '0.15rem 0.55rem', borderRadius: 5, fontSize: '0.72rem', fontWeight: 800,
@@ -361,7 +445,13 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
               {isPassed ? 'ACCEPTED' : isRuntimeErr ? 'RUNTIME ERROR' : submission.status}
             </span>
           </div>
-          <button onClick={onClose} className="btn-icon-ghost" title="Close Modal">
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            className="btn-icon-ghost"
+            title="Close Modal"
+            aria-label="Close modal"
+          >
             <X size={16} />
           </button>
         </div>
@@ -371,7 +461,7 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
           padding: '0.75rem 1.25rem',
           background: 'var(--bg-dark)',
           borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex', gap: 20, flexWrap: 'wrap',
+          display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center',
           fontSize: '0.8rem', color: 'var(--text-secondary)',
         }}>
           <div>Submitted: <strong style={{ color: 'white' }}>{new Date(submission.submittedAt).toLocaleString()}</strong></div>
@@ -384,6 +474,7 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
           {submission.executionTimeMs != null && (
             <div>Runtime: <strong style={{ color: 'white' }}>{submission.executionTimeMs} ms</strong></div>
           )}
+          <SyntaxStatusBadge review={submission} />
         </div>
 
         {/* Modal Code Content */}
@@ -430,7 +521,7 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
           </button>
 
           <button
-            onClick={() => onLoadIntoEditor(submission.code)}
+            onClick={() => onLoadIntoEditor(submission.code, submission.language)}
             className="btn btn-primary"
             style={{ fontSize: '0.8rem', padding: '0.4rem 0.9rem' }}
           >
@@ -444,7 +535,46 @@ function SubmissionDetailModal({ submission, onClose, onLoadIntoEditor }) {
 
 /* ── Main Component ─────────────────────────────────────────── */
 export default function CodingWorkspace({ problem, onBack }) {
-  const [code, setCode]               = useState(problem.initialCode || '');
+  const getCppStarterTemplate = useCallback((prob) => {
+    return `#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+using namespace std;
+
+// Solution for: ${prob?.title || 'Challenge'}
+int main() {
+    // Read input from standard input (cin)
+    // Print result to standard output (cout)
+
+    return 0;
+}
+`;
+  }, []);
+
+  const [language, setLanguage] = useState(() => {
+    return localStorage.getItem('workspace_selected_language') || 'JAVA';
+  });
+
+  const [codeDrafts, setCodeDrafts] = useState(() => ({
+    JAVA: problem?.initialCode || '',
+    CPP: getCppStarterTemplate(problem)
+  }));
+
+  const [code, setCode] = useState(() => {
+    const savedLang = localStorage.getItem('workspace_selected_language') || 'JAVA';
+    return savedLang === 'CPP' ? getCppStarterTemplate(problem) : (problem?.initialCode || '');
+  });
+
+  const handleLanguageChange = (newLang) => {
+    setCodeDrafts(prev => ({ ...prev, [language]: code }));
+    setLanguage(newLang);
+    localStorage.setItem('workspace_selected_language', newLang);
+    const nextCode = codeDrafts[newLang] || (newLang === 'CPP' ? getCppStarterTemplate(problem) : (problem?.initialCode || ''));
+    setCode(nextCode);
+  };
+
   const [activeLeftTab, setActiveLeftTab] = useState('statement');
   const [revealedHintIdx, setRevealedHintIdx] = useState(-1);
   const [analyzing, setAnalyzing]     = useState(false);
@@ -459,6 +589,11 @@ export default function CodingWorkspace({ problem, onBack }) {
   const [submissionsHistory, setSubmissionsHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const modalTriggerRef = useRef(null);
+  const handleOpenSubmissionModal = useCallback((sub, triggerEl) => {
+    modalTriggerRef.current = triggerEl || document.activeElement;
+    setSelectedSubmission(sub);
+  }, []);
   const [unlockedBadgeToast, setUnlockedBadgeToast] = useState(null);
 
   const loadHistory = useCallback(async () => {
@@ -624,7 +759,7 @@ export default function CodingWorkspace({ problem, onBack }) {
     setExecutionResult(null);
     setError(null);
     try {
-      const review = await analyzeProblemCode(problem.id, code);
+      const review = await analyzeProblemCode(problem.id, code, language);
       setReviewResult(review);
       setActiveReviewTab('overview');
       setResultsPanelVisible(true);
@@ -633,7 +768,7 @@ export default function CodingWorkspace({ problem, onBack }) {
     } finally {
       setAnalyzing(false);
     }
-  }, [problem.id, code]);
+  }, [problem.id, code, language]);
 
   const handleSubmit = useCallback(async () => {
     setSubmitting(true);
@@ -641,7 +776,7 @@ export default function CodingWorkspace({ problem, onBack }) {
     setExecutionResult(null);
     setError(null);
     try {
-      const res = await submitSolution(problem.id, code);
+      const res = await submitSolution(problem.id, code, language);
       setReviewResult(res.reviewSession);
       setExecutionResult(res.executionResult);
       setActiveReviewTab('overview');
@@ -659,16 +794,21 @@ export default function CodingWorkspace({ problem, onBack }) {
 
       loadHistory();
     } catch (err) {
-      setError('Submission failed. Please try again.');
+      setError(err?.message || 'Submission failed. Please try again.');
     } finally {
       setSubmitting(false);
     }
-  }, [problem.id, code, currentStatus, loadHistory]);
+  }, [problem.id, code, language, currentStatus, loadHistory]);
 
-  const handleLoadIntoEditor = (submittedCode) => {
+  const handleLoadIntoEditor = (submittedCode, submittedLang) => {
     if (code.trim() !== submittedCode.trim()) {
       const confirmed = window.confirm("Loading this submission into the editor will replace your current editor code. Do you want to continue?");
       if (!confirmed) return;
+    }
+    if (submittedLang && submittedLang !== language) {
+      setLanguage(submittedLang);
+      localStorage.setItem('workspace_selected_language', submittedLang);
+      setCodeDrafts(prev => ({ ...prev, [submittedLang]: submittedCode }));
     }
     setCode(submittedCode);
     setSelectedSubmission(null);
@@ -689,12 +829,22 @@ export default function CodingWorkspace({ problem, onBack }) {
       {/* ── Top Action Bar ───────────────────────────────────── */}
       <div className="workspace-topbar">
         {/* Left: back + problem info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="workspace-topbar-left">
           <button onClick={onBack} className="btn btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}>
             <ChevronLeft size={14} /> Problems
           </button>
           <div style={{ width: 1, height: 20, background: 'var(--border-subtle)' }} />
-          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'white' }}>{problem.title}</span>
+          <h1 style={{
+            fontWeight: 700,
+            fontSize: '0.9rem',
+            color: 'white',
+            margin: 0,
+            padding: 0,
+            display: 'inline',
+            lineHeight: 'inherit',
+          }}>
+            {problem.title}
+          </h1>
           <span className={`badge badge-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
           <span className="category-chip">{problem.category}</span>
           {currentStatus === 'SOLVED' ? (
@@ -728,7 +878,7 @@ export default function CodingWorkspace({ problem, onBack }) {
         </div>
 
         {/* Right: controls & actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div className="workspace-topbar-right">
 
           {/* Panel Toggle Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
@@ -754,15 +904,46 @@ export default function CodingWorkspace({ problem, onBack }) {
 
           <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', marginRight: 4 }} />
 
-          {/* Language tag */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)',
-            padding: '0.3rem 0.65rem', borderRadius: 6,
-            fontSize: '0.75rem', color: '#60a5fa', fontWeight: 600,
-          }}>
-            <FileCode2 size={12} />
-            Java 21
+          {/* Language Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <FileCode2 size={13} color="#60a5fa" />
+            <select
+              id="select-language"
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              className="language-selector"
+              style={{
+                background: 'rgba(96,165,250,0.08)',
+                border: '1px solid rgba(96,165,250,0.25)',
+                color: '#60a5fa',
+                padding: '0.28rem 0.6rem',
+                borderRadius: 6,
+                fontSize: '0.76rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+              title="Select Programming Language"
+              aria-label="Select Programming Language"
+            >
+              <option value="JAVA" style={{ background: '#18181b', color: '#f4f4f5' }}>Java 21 (.java)</option>
+              <option value="CPP" style={{ background: '#18181b', color: '#f4f4f5' }}>C++ 17 (.cpp)</option>
+            </select>
+            <button
+              onClick={() => {
+                if (window.confirm(`Reset ${language === 'CPP' ? 'C++' : 'Java'} code to default starter template?`)) {
+                  const defaultCode = language === 'CPP' ? getCppStarterTemplate(problem) : (problem.initialCode || '');
+                  setCode(defaultCode);
+                  setCodeDrafts(prev => ({ ...prev, [language]: defaultCode }));
+                }
+              }}
+              className="btn-icon-ghost"
+              title="Reset code to default starter template"
+              aria-label="Reset code to default starter template"
+              style={{ padding: '0.3rem 0.45rem' }}
+            >
+              <RotateCcw size={12} color="#94a3b8" />
+            </button>
           </div>
 
           <button
@@ -847,26 +1028,26 @@ export default function CodingWorkspace({ problem, onBack }) {
               {/* Statement */}
               {activeLeftTab === 'statement' && (
                 <div className="animate-slide-up">
-                  <p style={{ fontSize: '0.875rem', lineHeight: 1.65, color: 'var(--text-main)', whiteSpace: 'pre-line', marginBottom: '1.5rem' }}>
+                  <div className="problem-statement-title" style={{ fontSize: '1.25rem', fontWeight: 800, color: 'white', marginBottom: '0.75rem', lineHeight: 1.3 }}>
+                    {problem.title}
+                  </div>
+                  <p style={{ fontSize: '0.875rem', lineHeight: 1.65, color: 'var(--text-main)', whiteSpace: 'pre-line', marginBottom: '1.25rem' }}>
                     {problem.description}
                   </p>
 
-                  {problem.inputFormat && (
-                    <div style={{ marginBottom: '1rem' }}>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Input Format</div>
-                      <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>{problem.inputFormat}</p>
-                    </div>
-                  )}
+                  {/* Reusable "How to Provide Input" Guide */}
+                  <InputFormatGuide problem={problem} examples={examples} />
+
                   {problem.outputFormat && (
                     <div style={{ marginBottom: '1rem' }}>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Output Format</div>
+                      <h2 style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Output Format</h2>
                       <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>{problem.outputFormat}</p>
                     </div>
                   )}
 
                   {problem.constraints && (
                     <div style={{ marginBottom: '1rem' }}>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 6 }}>Constraints</div>
+                      <h2 style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 6 }}>Constraints</h2>
                       <pre style={{
                         background: 'var(--bg-dark)', padding: '0.65rem 0.85rem',
                         borderRadius: 7, fontSize: '0.8rem', color: '#93c5fd',
@@ -964,6 +1145,7 @@ export default function CodingWorkspace({ problem, onBack }) {
               {/* Examples tab */}
               {activeLeftTab === 'examples' && (
                 <div className="animate-slide-up">
+                  <InputFormatGuide problem={problem} examples={examples} />
                   {examples.map((ex, i) => (
                     <div key={i} style={{ marginBottom: '1.25rem' }}>
                       <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-dim)', marginBottom: 8 }}>
@@ -1000,7 +1182,7 @@ export default function CodingWorkspace({ problem, onBack }) {
                   <SubmissionHistoryList
                     history={submissionsHistory}
                     loading={historyLoading}
-                    onSelectSubmission={setSelectedSubmission}
+                    onSelectSubmission={handleOpenSubmissionModal}
                   />
                 </div>
               )}
@@ -1024,10 +1206,14 @@ export default function CodingWorkspace({ problem, onBack }) {
             <Editor
               onMount={handleEditorMount}
               height="100%"
-              language="java"
+              language={language === 'CPP' ? 'cpp' : 'java'}
               theme="vs-dark"
               value={code}
-              onChange={val => setCode(val || '')}
+              onChange={val => {
+                const nextVal = val || '';
+                setCode(nextVal);
+                setCodeDrafts(prev => ({ ...prev, [language]: nextVal }));
+              }}
               options={{
                 fontSize: 14,
                 minimap: { enabled: false },
@@ -1145,6 +1331,7 @@ export default function CodingWorkspace({ problem, onBack }) {
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
+                      <SyntaxStatusBadge review={reviewResult} style={{ marginBottom: '0.75rem' }} />
                       {reviewResult.summary && (
                         <p style={{
                           fontSize: '0.82rem', color: 'var(--text-secondary)',
@@ -1300,6 +1487,7 @@ export default function CodingWorkspace({ problem, onBack }) {
         submission={selectedSubmission}
         onClose={() => setSelectedSubmission(null)}
         onLoadIntoEditor={handleLoadIntoEditor}
+        triggerRef={modalTriggerRef}
       />
 
       {/* Achievement Unlocked Toast Notification */}
@@ -1356,6 +1544,7 @@ export default function CodingWorkspace({ problem, onBack }) {
             className="btn-icon-ghost"
             style={{ flexShrink: 0 }}
             title="Dismiss"
+            aria-label="Dismiss achievement notification"
           >
             <X size={14} />
           </button>

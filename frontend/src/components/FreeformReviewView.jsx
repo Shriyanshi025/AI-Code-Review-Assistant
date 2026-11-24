@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { analyzeFreeformCode } from '../services/api';
+import SyntaxStatusBadge from './SyntaxStatusBadge';
 import {
   Play, Sparkles, CheckCircle2, XCircle, FileCode2,
   RefreshCw, Zap, Bug, BarChart2, Shield, Eye, EyeOff, Lightbulb,
@@ -32,7 +33,15 @@ function MetricBar({ label, score }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{ width: 104, fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{label}</div>
-      <div className="progress-bar-track" style={{ flex: 1, height: 5 }}>
+      <div
+        className="progress-bar-track"
+        style={{ flex: 1, height: 5 }}
+        role="progressbar"
+        aria-valuenow={score}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
         <div className="progress-bar-fill" style={{ width: `${score}%`, background: color }} />
       </div>
       <div style={{ width: 26, textAlign: 'right', fontSize: '0.8rem', fontWeight: 700, color, flexShrink: 0 }}>{score}</div>
@@ -100,7 +109,12 @@ function FindingItem({ f }) {
           </div>
           <div style={{ fontWeight: 700, fontSize: '0.83rem', color: 'var(--text-main)' }}>{f.title}</div>
         </div>
-        <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 3, flexShrink: 0 }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          aria-label={open ? "Collapse finding details" : "Expand finding details"}
+          title={open ? "Collapse finding details" : "Expand finding details"}
+          style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 3, flexShrink: 0 }}
+        >
           {open ? <EyeOff size={13} /> : <Eye size={13} />}
         </button>
       </div>
@@ -139,15 +153,55 @@ function FindingItem({ f }) {
 }
 
 export default function FreeformReviewView() {
-  const [code, setCode]             = useState('');
+  const defaultTemplates = {
+    JAVA: `public class Solution {
+    public static void main(String[] args) {
+        System.out.println("Hello from Java!");
+    }
+}`,
+    CPP: `#include <iostream>
+#include <vector>
+#include <string>
+
+using namespace std;
+
+int main() {
+    cout << "Hello from C++!" << endl;
+    return 0;
+}`
+  };
+
+  const [language, setLanguage] = useState(() => {
+    return localStorage.getItem('freeform_selected_language') || 'JAVA';
+  });
+
+  const [codeDrafts, setCodeDrafts] = useState(() => ({
+    JAVA: defaultTemplates.JAVA,
+    CPP: defaultTemplates.CPP
+  }));
+
+  const [code, setCode] = useState(() => {
+    const savedLang = localStorage.getItem('freeform_selected_language') || 'JAVA';
+    return defaultTemplates[savedLang] || defaultTemplates.JAVA;
+  });
+
   const [analyzing, setAnalyzing]   = useState(false);
   const [reviewResult, setResult]   = useState(null);
   const [error, setError]           = useState(null);
   const [activeTab, setActiveTab]   = useState('findings');
 
+  const handleLanguageChange = (newLang) => {
+    setCodeDrafts(prev => ({ ...prev, [language]: code }));
+    setLanguage(newLang);
+    localStorage.setItem('freeform_selected_language', newLang);
+    setCode(codeDrafts[newLang] || defaultTemplates[newLang]);
+    setResult(null);
+    setError(null);
+  };
+
   const handleAnalyze = async () => {
     if (!code || !code.trim()) {
-      setError('Add some Java code before starting the review.');
+      setError(`Add some ${language === 'CPP' ? 'C++' : 'Java'} code before starting the review.`);
       return;
     }
 
@@ -155,7 +209,7 @@ export default function FreeformReviewView() {
     setResult(null);
     setError(null);
     try {
-      const res = await analyzeFreeformCode(code);
+      const res = await analyzeFreeformCode(code, language);
       setResult(res);
       setActiveTab('findings');
     } catch (e) {
@@ -175,19 +229,19 @@ export default function FreeformReviewView() {
   const scoreColor = overallScore >= 85 ? '#34d399' : overallScore >= 65 ? '#fbbf24' : '#f87171';
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '1.75rem 1.5rem', height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column' }}>
+    <div className="freeform-view-container" style={{ maxWidth: 1200, margin: '0 auto', padding: '1.75rem 1.5rem', height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Header ─────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem', gap: '1rem' }}>
+      <div className="freeform-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem', gap: '1rem' }}>
         <div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.25rem 0.65rem', borderRadius: 20, background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', fontSize: '0.73rem', fontWeight: 600, marginBottom: 8 }}>
-            <FileCode2 size={12} /> Free-form Java Code Review
+            <FileCode2 size={12} /> Free-form {language === 'CPP' ? 'C++' : 'Java'} Code Review
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
             Code Analyzer
           </h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
-            Paste or write Java code, then analyze it for quality, complexity, security, and maintainability.
+            Paste or write {language === 'CPP' ? 'C++ (.cpp, .cc, .h)' : 'Java (.java)'} code, then analyze it for quality, complexity, security, and maintainability.
           </p>
         </div>
 
@@ -216,18 +270,41 @@ export default function FreeformReviewView() {
       </div>
 
       {/* ── Body: Split View ─────────────────────────── */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: reviewResult ? '1fr 1fr' : '1fr', gap: '1rem', minHeight: 0 }}>
+      <div className="freeform-grid" style={{ flex: 1, display: 'grid', gridTemplateColumns: reviewResult ? '1fr 1fr' : '1fr', gap: '1rem', minHeight: 0 }}>
 
         {/* Editor */}
-        <div className="container-glass" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="container-glass freeform-editor-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{
             padding: '0.55rem 0.85rem',
             borderBottom: '1px solid var(--border-subtle)',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <FileCode2 size={13} color="#60a5fa" /> Java Source
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <FileCode2 size={13} color="#60a5fa" /> {language === 'CPP' ? 'C++ Source' : 'Java Source'}
+              </span>
+              <select
+                id="freeform-language-select"
+                value={language}
+                onChange={(e) => handleLanguageChange(e.target.value)}
+                style={{
+                  background: 'rgba(96,165,250,0.08)',
+                  border: '1px solid rgba(96,165,250,0.25)',
+                  color: '#60a5fa',
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: 5,
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+                title="Select Programming Language"
+                aria-label="Select Programming Language"
+              >
+                <option value="JAVA" style={{ background: '#18181b', color: '#f4f4f5' }}>Java 21 (.java)</option>
+                <option value="CPP" style={{ background: '#18181b', color: '#f4f4f5' }}>C++ 17 (.cpp)</option>
+              </select>
+            </div>
             <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
               {code.trim() ? `${code.split('\n').length} lines` : 'empty'}
             </span>
@@ -235,10 +312,14 @@ export default function FreeformReviewView() {
           <div style={{ flex: 1 }}>
             <Editor
               height="100%"
-              language="java"
+              language={language === 'CPP' ? 'cpp' : 'java'}
               theme="vs-dark"
               value={code}
-              onChange={v => setCode(v || '')}
+              onChange={v => {
+                const next = v || '';
+                setCode(next);
+                setCodeDrafts(prev => ({ ...prev, [language]: next }));
+              }}
               options={{
                 fontSize: 13.5,
                 minimap: { enabled: false },
@@ -256,8 +337,13 @@ export default function FreeformReviewView() {
             />
           </div>
 
+          {analyzing && (
+            <div className="status-banner info" style={{ margin: '0.5rem', borderRadius: 7 }} role="status" aria-live="polite">
+              <RefreshCw size={14} className="spin" /> Analyzing code for quality, complexity, security, and maintainability…
+            </div>
+          )}
           {error && (
-            <div className="status-banner failed" style={{ margin: '0.5rem', borderRadius: 7 }}>
+            <div className="status-banner failed" style={{ margin: '0.5rem', borderRadius: 7 }} role="alert" aria-live="assertive">
               <XCircle size={14} /> {error}
             </div>
           )}
@@ -280,7 +366,10 @@ export default function FreeformReviewView() {
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'white', marginBottom: 4 }}>Code Review Results</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <h2 style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'white' }}>Code Review Results</h2>
+                  <SyntaxStatusBadge review={reviewResult} />
+                </div>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {reviewResult.summary}
                 </p>

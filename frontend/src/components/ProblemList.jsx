@@ -94,7 +94,7 @@ export default function ProblemList({ onSelectProblem }) {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 1.5rem' }}>
+    <div className="problem-list-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 1.5rem' }}>
 
       {/* ── Hero Header ─────────────────────────────── */}
       <div style={{ marginBottom: '2rem' }}>
@@ -140,6 +140,7 @@ export default function ProblemList({ onSelectProblem }) {
       <div style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Search */}
         <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 340 }}>
+          <label htmlFor="problem-search" className="sr-only">Search challenges by title or topic</label>
           <Search size={15} style={{
             position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
             color: 'var(--text-dim)', pointerEvents: 'none',
@@ -181,6 +182,7 @@ export default function ProblemList({ onSelectProblem }) {
         {/* Category filter */}
         {categories.length > 1 && (
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <label htmlFor="category-filter-select" className="sr-only">Filter challenges by topic</label>
             <Filter size={13} style={{ position: 'absolute', left: 9, color: 'var(--text-dim)', pointerEvents: 'none' }} />
             <select
               id="category-filter-select"
@@ -236,16 +238,17 @@ export default function ProblemList({ onSelectProblem }) {
           </div>
         </div>
       ) : (
-        <div className="container-glass" style={{ overflow: 'hidden' }}>
+        <div className="container-glass table-scroll-container">
           <table className="problem-table">
+            <caption className="sr-only">Coding challenges list with difficulty, category, and completion status</caption>
             <thead>
               <tr>
-                <th style={{ width: 40 }}>#</th>
-                <th>Problem</th>
-                <th style={{ width: 110 }}>Difficulty</th>
-                <th style={{ width: 130 }}>Category</th>
-                <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 40 }}></th>
+                <th scope="col" style={{ width: 40 }}>#</th>
+                <th scope="col">Problem</th>
+                <th scope="col" style={{ width: 110 }}>Difficulty</th>
+                <th scope="col" style={{ width: 130 }}>Category</th>
+                <th scope="col" style={{ width: 110 }}>Status</th>
+                <th scope="col" style={{ width: 40 }}><span className="sr-only">Action</span></th>
               </tr>
             </thead>
             <tbody>
@@ -261,10 +264,27 @@ export default function ProblemList({ onSelectProblem }) {
                   </td>
 
                   <td>
-                    <div className="problem-title">{problem.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>
-                      {problem.hints ? `${problem.hints.length} hints available` : 'Practice problem'}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onSelectProblem(problem)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        font: 'inherit',
+                        color: 'inherit',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'block',
+                        width: '100%',
+                      }}
+                    >
+                      <span className="problem-title" style={{ display: 'block' }}>{problem.title}</span>
+                      <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                        {problem.hints ? `${problem.hints.length} hints available` : 'Practice problem'}
+                      </span>
+                    </button>
                   </td>
 
                   <td><DifficultyDot level={problem.difficulty} /></td>
@@ -290,7 +310,7 @@ export default function ProblemList({ onSelectProblem }) {
                   </td>
 
                   <td>
-                    <ChevronRight size={15} className="problem-row-arrow" />
+                    <ChevronRight size={15} className="problem-row-arrow" aria-hidden="true" />
                   </td>
                 </tr>
               ))}

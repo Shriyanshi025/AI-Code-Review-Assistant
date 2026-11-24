@@ -28,6 +28,7 @@ public class JavaLanguageAnalyzer implements LanguageAnalyzer {
         if (code == null || code.trim().isEmpty()) {
             return AnalysisResult.builder()
                     .language("JAVA")
+                    .syntaxStatus(SyntaxStatus.INVALID)
                     .syntaxValid(false)
                     .parsingErrorMessage("Source code is empty")
                     .qualityScore(0)
@@ -66,6 +67,7 @@ public class JavaLanguageAnalyzer implements LanguageAnalyzer {
 
             return AnalysisResult.builder()
                     .language("JAVA")
+                    .syntaxStatus(SyntaxStatus.INVALID)
                     .syntaxValid(false)
                     .parsingErrorMessage(errorMsg)
                     .findings(syntaxFindings)
@@ -152,6 +154,7 @@ public class JavaLanguageAnalyzer implements LanguageAnalyzer {
 
         return AnalysisResult.builder()
                 .language("JAVA")
+                .syntaxStatus(SyntaxStatus.VALID)
                 .syntaxValid(true)
                 .findings(findings)
                 .metrics(metricsMap)

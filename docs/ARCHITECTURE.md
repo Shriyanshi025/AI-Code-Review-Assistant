@@ -34,3 +34,10 @@ ProblemEntity    SubmissionEntity       ReviewSessionEntity UserProgressEntity
 2. **`com.codereview.backend.execution`**: Isolated test case execution engine.
 3. **`com.codereview.backend.ai`**: AI Review adapter producing structured summaries, hints, and refactoring plans.
 4. **`com.codereview.backend.review`**: Orchestrates analysis, execution, and AI reasoning into a unified review session.
+
+## User Identity & Single-User Architecture
+The platform is currently structured as a single-user prototype for local development and review:
+- **Default Developer Identity**: Submissions, review sessions, problem solve statuses, and badges resolve to a seeded default identity (`username: demo_developer`, `email: developer@codeeval.ai`, ID `1`).
+- **No Authentication**: The application does not currently implement authentication, user registration, session management, or access control.
+- **Data Model Preparation**: Entity relationships (`SubmissionEntity`, `ReviewSessionEntity`, `UserProgressEntity`, `UserBadgeEntity`) maintain foreign-key links to `UserEntity` to facilitate future migration, but all unauthenticated or null user requests map to the default developer identity.
+- **Future Multi-Tenancy**: Dedicated authentication, user accounts, and multi-tenant session isolation are planned for Phase 3.

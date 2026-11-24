@@ -37,6 +37,15 @@ public class StructuredAIResponse {
     @Builder.Default
     private List<String> tradeoffs = new ArrayList<>();
 
+    @Builder.Default
+    private String aiProvider = "DETERMINISTIC";
+
+    @Builder.Default
+    private String aiModel = "NONE";
+
+    @Builder.Default
+    private String aiKeySource = "NONE";
+
     @Data
     @Builder
     @NoArgsConstructor

@@ -29,5 +29,6 @@ public class SubmissionHistoryDto {
     private Integer complexityScore;
     private String timeComplexity;
     private String spaceComplexity;
+    private String syntaxStatus;
     private String summary;
 }

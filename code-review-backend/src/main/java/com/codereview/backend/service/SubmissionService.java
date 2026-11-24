@@ -9,8 +9,8 @@ import com.codereview.backend.execution.ExecutionResult;
 import com.codereview.backend.repository.ProblemRepository;
 import com.codereview.backend.repository.ReviewSessionRepository;
 import com.codereview.backend.repository.SubmissionRepository;
-import com.codereview.backend.repository.UserProgressRepository;
 import com.codereview.backend.review.ReviewEngine;
+import com.codereview.backend.util.LanguageValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,14 +33,21 @@ public class SubmissionService {
 
     @Transactional
     public SubmissionResponse submitSolution(Long problemId, String code, Long userId) {
+        return submitSolution(problemId, code, userId, "JAVA");
+    }
+
+    @Transactional
+    public SubmissionResponse submitSolution(Long problemId, String code, Long userId, String language) {
         UserEntity user = reviewService.resolveUser(userId);
         ProblemEntity problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new IllegalArgumentException("Problem not found with ID: " + problemId));
 
+        String lang = LanguageValidator.validateAndNormalize(language);
+
         // 1. Run Execution Engine
         ExecutionResult execResult = executionEngine.execute(ExecutionRequest.builder()
                 .code(code)
-                .language("JAVA")
+                .language(lang)
                 .testCases(problem.getTestCases())
                 .build());
 
@@ -49,7 +56,7 @@ public class SubmissionService {
                 .user(user)
                 .problem(problem)
                 .code(code)
-                .language("JAVA")
+                .language(lang)
                 .status(execResult.getStatus())
                 .passedTestCases(execResult.getPassedTestCases())
                 .totalTestCases(execResult.getTotalTestCases())
@@ -59,7 +66,7 @@ public class SubmissionService {
         submission = submissionRepository.save(submission);
 
         // 3. Perform Unified Code Review
-        ReviewSessionEntity reviewSession = reviewEngine.createReviewSession(user, problem, submission, code, "PROBLEM_SUBMISSION");
+        ReviewSessionEntity reviewSession = reviewEngine.createReviewSession(user, problem, submission, code, "PROBLEM_SUBMISSION", lang);
         reviewSession = reviewSessionRepository.save(reviewSession);
 
         // 4. Update User Progress (dynamically recalculated from database)
@@ -102,6 +109,7 @@ public class SubmissionService {
                     .complexityScore(session != null ? session.getComplexityScore() : null)
                     .timeComplexity(session != null ? session.getTimeComplexity() : null)
                     .spaceComplexity(session != null ? session.getSpaceComplexity() : null)
+                    .syntaxStatus(session != null ? session.getSyntaxStatus() : null)
                     .summary(session != null ? session.getSummary() : null)
                     .build();
 

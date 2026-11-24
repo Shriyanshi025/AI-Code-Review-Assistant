@@ -54,7 +54,7 @@ public class DsaProblemSeeder {
         upsertProblem("find-maximum-element", "Find Maximum Element", "EASY", "Arrays",
                 "Given an array of integers `arr`, find and return the maximum element in the array.",
                 "1 <= arr.length <= 10^5\n-10^9 <= arr[i] <= 10^9",
-                "An integer array `arr`.", "Integer representing the maximum value.",
+                "Enter the array as a bracketed list of comma-separated integers.", "Integer representing the maximum value.",
                 "[{\"input\": \"arr = [3, 7, 2, 9, 5]\", \"output\": \"9\", \"explanation\": \"9 is the largest element.\"}]",
                 "public class Solution {\n    public int findLargest(int[] arr) {\n        // Write your solution here\n        return 0;\n    }\n}",
                 List.of("Keep track of maximum value seen so far.", "Initialize with arr[0] to handle negative numbers."),

@@ -2,6 +2,7 @@ package com.codereview.backend.ai;
 
 import com.codereview.backend.analysis.core.FindingDto;
 import com.codereview.backend.analysis.core.FindingSeverity;
+import com.codereview.backend.util.LanguageValidator;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -16,7 +17,10 @@ public class DeterministicAIReviewAdapter implements AIReviewAdapter {
         long highCount = findings.stream().filter(f -> f.getSeverity() == FindingSeverity.HIGH).count();
         long medCount = findings.stream().filter(f -> f.getSeverity() == FindingSeverity.MEDIUM).count();
 
-        String title = request.getProblemTitle() != null ? request.getProblemTitle() : "Java Code Analysis";
+        boolean isCpp = LanguageValidator.isCpp(request.getLanguage());
+        String defaultTitle = isCpp ? "C++ Code Analysis" : "Java Code Analysis";
+        String langLabel = isCpp ? "C++" : "Java";
+        String title = request.getProblemTitle() != null ? request.getProblemTitle() : defaultTitle;
 
         // 1. Build summary
         String summary;
@@ -25,8 +29,8 @@ public class DeterministicAIReviewAdapter implements AIReviewAdapter {
         } else if (medCount > 0) {
             summary = String.format("Review for '%s': Solution is functional but contains %d potential performance or code-quality optimization opportunities.", title, medCount);
         } else {
-            summary = String.format("Review for '%s': Excellent submission! Clean Java code structure with solid complexity performance (%s time, %s space).",
-                    title, request.getEstimatedTimeComplexity(), request.getEstimatedSpaceComplexity());
+            summary = String.format("Review for '%s': Excellent submission! Clean %s code structure with solid complexity performance (%s time, %s space).",
+                    title, langLabel, request.getEstimatedTimeComplexity(), request.getEstimatedSpaceComplexity());
         }
 
         // 2. Build logical reasoning
@@ -85,6 +89,9 @@ public class DeterministicAIReviewAdapter implements AIReviewAdapter {
                 .edgeCaseSuggestions(edgeCases)
                 .testSuggestions(testSuggestions)
                 .progressiveHints(hints)
+                .aiProvider("DETERMINISTIC")
+                .aiModel("RULE_BASED_AST")
+                .aiKeySource("NONE")
                 .build();
     }
 }
